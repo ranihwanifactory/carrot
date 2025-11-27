@@ -22,7 +22,8 @@ export enum ViewState {
   SALES = 'SALES',
   WATCHLIST = 'WATCHLIST',
   CHAT = 'CHAT',
-  CHAT_DETAIL = 'CHAT_DETAIL'
+  CHAT_DETAIL = 'CHAT_DETAIL',
+  NOTIFICATIONS = 'NOTIFICATIONS'
 }
 
 export interface ChatRoom {
@@ -42,6 +43,16 @@ export interface ChatMessage {
   senderId: string;
   text: string;
   timestamp: number;
+}
+
+export interface Notification {
+  id: string;
+  type: 'ACTIVITY' | 'KEYWORD';
+  text: string;
+  subText?: string;
+  timestamp: number;
+  isRead: boolean;
+  imageUrl?: string;
 }
 
 export interface Coordinates {
