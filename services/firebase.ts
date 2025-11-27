@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getDatabase, ref, push, set, onValue, update, query, orderByChild, remove, get } from "firebase/database";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, User } from "firebase/auth";
-import { Product, ChatRoom, ChatMessage } from "../types";
+import { Product, ChatRoom, ChatMessage, Notification } from "../types";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCljhEUeggqRKk18EeQPsE_EsDOqfmWdOw",
@@ -19,10 +19,11 @@ const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
 const productsRef = ref(db, 'products');
-const LOCAL_STORAGE_KEY = 'carrot_local_products';
+const LOCAL_PRODUCTS_KEY = 'carrot_local_products'; // For new products OR edits
 const LOCAL_CHATS_KEY = 'carrot_local_chats';
 const LOCAL_MESSAGES_KEY = 'carrot_local_messages';
-const LOCAL_DELETED_MOCKS_KEY = 'carrot_deleted_mocks';
+const LOCAL_HIDDEN_IDS_KEY = 'carrot_hidden_ids'; // For deleted products (both mock and real)
+const LOCAL_NOTIFICATIONS_KEY = 'carrot_notifications';
 
 // Mock data for initial populated feel
 const MOCK_PRODUCTS: Product[] = [
@@ -56,6 +57,35 @@ const MOCK_PRODUCTS: Product[] = [
     }
 ];
 
+// Mock Notifications
+const MOCK_NOTIFICATIONS: Notification[] = [
+    {
+        id: 'noti-1',
+        type: 'ACTIVITY',
+        text: '당근러님이 "아이패드 에어" 게시글을 관심목록에 추가했어요.',
+        timestamp: Date.now() - 3600000,
+        isRead: false,
+        imageUrl: 'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&q=80&w=100'
+    },
+    {
+        id: 'noti-2',
+        type: 'ACTIVITY',
+        text: '따뜻한 거래 되셨나요? 거래 후기를 남겨주세요.',
+        subText: '이사가서 의자 무료나눔해요',
+        timestamp: Date.now() - 86400000,
+        isRead: true,
+        imageUrl: 'https://images.unsplash.com/photo-1503602642458-2321114453ad?auto=format&fit=crop&q=80&w=100'
+    },
+    {
+        id: 'noti-3',
+        type: 'KEYWORD',
+        text: '"맥북" 키워드 알림',
+        subText: '새로운 상품이 등록되었습니다: 맥북 프로 14인치 팝니다.',
+        timestamp: Date.now() - 172800000,
+        isRead: true
+    }
+];
+
 // Helper to sanitize product data
 const sanitizeProduct = (p: any): Product => ({
     ...p,
@@ -65,102 +95,138 @@ const sanitizeProduct = (p: any): Product => ({
     isSold: !!p.isSold
 });
 
-const getDeletedMockIds = (): string[] => {
-    return JSON.parse(localStorage.getItem(LOCAL_DELETED_MOCKS_KEY) || '[]');
+const getLocalProducts = (): Product[] => {
+    return JSON.parse(localStorage.getItem(LOCAL_PRODUCTS_KEY) || '[]');
+};
+
+const getHiddenIds = (): string[] => {
+    return JSON.parse(localStorage.getItem(LOCAL_HIDDEN_IDS_KEY) || '[]');
+};
+
+const saveLocalProduct = (product: Product) => {
+    const products = getLocalProducts();
+    const index = products.findIndex(p => p.id === product.id);
+    if (index >= 0) {
+        products[index] = product;
+    } else {
+        products.push(product);
+    }
+    localStorage.setItem(LOCAL_PRODUCTS_KEY, JSON.stringify(products));
+};
+
+const hideProductLocally = (productId: string) => {
+    const hidden = getHiddenIds();
+    if (!hidden.includes(productId)) {
+        hidden.push(productId);
+        localStorage.setItem(LOCAL_HIDDEN_IDS_KEY, JSON.stringify(hidden));
+    }
+    // Also remove from local products if it exists there
+    const products = getLocalProducts().filter(p => p.id !== productId);
+    localStorage.setItem(LOCAL_PRODUCTS_KEY, JSON.stringify(products));
 };
 
 export const subscribeToProducts = (callback: (products: Product[]) => void) => {
-    const loadLocal = () => {
-        const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-        const local = saved ? JSON.parse(saved) : [];
-        const migratedLocal = local.map(sanitizeProduct);
+    const mergeData = (firebaseData: Product[]) => {
+        const localProducts = getLocalProducts();
+        const hiddenIds = getHiddenIds();
         
-        const deletedMocks = getDeletedMockIds();
-        const activeMocks = MOCK_PRODUCTS.filter(p => !deletedMocks.includes(p.id));
+        // 1. Start with Firebase Data
+        let merged = [...firebaseData];
 
-        return [...migratedLocal, ...activeMocks].sort((a: Product, b: Product) => b.createdAt - a.createdAt);
+        // 2. Add Mock Data (if not in firebase)
+        // Check if mock data is already in firebase (to avoid dupes if we ever synced them)
+        MOCK_PRODUCTS.forEach(mock => {
+             if (!merged.find(p => p.id === mock.id)) {
+                 merged.push(mock);
+             }
+        });
+
+        // 3. Apply Local Overrides (Edits) & Add New Local Products
+        localProducts.forEach(local => {
+            const index = merged.findIndex(p => p.id === local.id);
+            if (index >= 0) {
+                // Override existing (Firebase or Mock)
+                merged[index] = local;
+            } else {
+                // Add new local
+                merged.push(local);
+            }
+        });
+
+        // 4. Filter Hidden
+        const final = merged.filter(p => !hiddenIds.includes(p.id));
+        
+        // 5. Sort
+        final.sort((a, b) => b.createdAt - a.createdAt);
+        
+        callback(final);
     };
-    
-    callback(loadLocal());
+
+    // Initial Load (Local Only)
+    mergeData([]);
 
     const q = query(productsRef, orderByChild('createdAt'));
     return onValue(q, (snapshot) => {
         const data = snapshot.val();
-        if (data) {
-            const firebaseProducts = Object.values(data).map(sanitizeProduct);
-            const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-            const local = saved ? JSON.parse(saved) : [];
-            const migratedLocal = local.map(sanitizeProduct);
-            
-            const deletedMocks = getDeletedMockIds();
-            const activeMocks = MOCK_PRODUCTS.filter(p => !deletedMocks.includes(p.id));
-            
-            const allProducts = [...firebaseProducts, ...migratedLocal, ...activeMocks]
-                .filter((v, i, a) => a.findIndex(t => t.id === v.id) === i)
-                .sort((a, b) => b.createdAt - a.createdAt);
-            callback(allProducts);
-        }
+        const firebaseProducts = data ? Object.values(data).map(sanitizeProduct) : [];
+        mergeData(firebaseProducts);
     }, (error) => {
-        callback(loadLocal());
+        console.warn("Firebase read failed, using local only", error);
+        mergeData([]); // Keep using local/mock data
     });
 };
 
 export const createProduct = async (product: Omit<Product, 'id'>) => {
-    const newId = push(productsRef).key || `local-${Date.now()}`;
+    // Optimistic: Create Local ID
+    const newId = `local-${Date.now()}`;
     const newProduct = { ...product, id: newId };
 
     try {
-        await set(ref(db, `products/${newId}`), newProduct);
+        // Try Firebase
+        const fbRef = push(productsRef);
+        const fbId = fbRef.key;
+        if (fbId) {
+             const finalProduct = { ...product, id: fbId };
+             await set(fbRef, finalProduct);
+             return fbId;
+        }
     } catch (e) {
-        const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-        const products = saved ? JSON.parse(saved) : [];
-        products.push(newProduct);
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(products));
-        window.dispatchEvent(new Event('product-local-update'));
+        console.warn("Create failed, falling back to local", e);
     }
+    
+    // Fallback or if using local ID logic
+    saveLocalProduct(newProduct);
+    window.dispatchEvent(new Event('product-local-update'));
     return newId;
 };
 
 export const updateProduct = async (product: Product) => {
-    try {
-        if (product.id.startsWith('local-')) {
-            const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-            let products = saved ? JSON.parse(saved) : [];
-            products = products.map((p: Product) => p.id === product.id ? product : p);
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(products));
-            window.dispatchEvent(new Event('product-local-update'));
-        } else {
+    // 1. Save Local Override Immediately (Optimistic UI)
+    saveLocalProduct(product);
+    window.dispatchEvent(new Event('product-local-update'));
+
+    // 2. Try Firebase Update
+    if (!product.id.startsWith('local-') && !product.id.startsWith('mock-')) {
+        try {
             await update(ref(db, `products/${product.id}`), product);
+        } catch (e) {
+            console.warn("Firebase update failed (permission?), kept local override.", e);
         }
-    } catch (e) {
-        console.error("Update failed", e);
     }
 };
 
 export const deleteProduct = async (productId: string) => {
-    try {
-        if (productId.startsWith('local-')) {
-            // Case 1: Created locally offline
-            const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-            let products = saved ? JSON.parse(saved) : [];
-            products = products.filter((p: Product) => p.id !== productId);
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(products));
-            window.dispatchEvent(new Event('product-local-update'));
-        } else if (productId.startsWith('mock-')) {
-            // Case 2: Mock product - add to exclusion list
-            const deletedMocks = getDeletedMockIds();
-            if (!deletedMocks.includes(productId)) {
-                deletedMocks.push(productId);
-                localStorage.setItem(LOCAL_DELETED_MOCKS_KEY, JSON.stringify(deletedMocks));
-                window.dispatchEvent(new Event('product-local-update'));
-            }
-        } else {
-            // Case 3: Real Firebase product
+    // 1. Hide Locally Immediately (Optimistic UI)
+    hideProductLocally(productId);
+    window.dispatchEvent(new Event('product-local-update'));
+
+    // 2. Try Firebase Delete
+    if (!productId.startsWith('local-') && !productId.startsWith('mock-')) {
+        try {
             await remove(ref(db, `products/${productId}`));
+        } catch (e) {
+             console.warn("Firebase delete failed (permission?), kept local hide.", e);
         }
-    } catch (e) {
-        console.error("Delete failed", e);
-        alert("삭제에 실패했습니다. 권한을 확인해주세요.");
     }
 };
 
@@ -176,13 +242,9 @@ export const toggleLike = (productId: string, currentLikes: number) => {
         localStorage.setItem(likesKey, JSON.stringify(myLikes));
     }
 
-    try {
-        if (!productId.startsWith('local-') && !productId.startsWith('mock-')) {
-            const productRef = ref(db, `products/${productId}`);
-            update(productRef, { likes: currentLikes + 1 });
-        }
-    } catch (e) {
-        console.log("Offline like toggle");
+    // Attempt Firebase update but don't worry if it fails
+    if (!productId.startsWith('local-') && !productId.startsWith('mock-')) {
+        update(ref(db, `products/${productId}`), { likes: currentLikes + 1 }).catch(() => {});
     }
     window.dispatchEvent(new Event('product-local-update'));
 };
@@ -190,6 +252,36 @@ export const toggleLike = (productId: string, currentLikes: number) => {
 export const getMyLikedProductIds = (): string[] => {
     return JSON.parse(localStorage.getItem('my_likes') || '[]');
 };
+
+// --- NOTIFICATION SERVICES ---
+
+export const getNotifications = (): Notification[] => {
+    const local = JSON.parse(localStorage.getItem(LOCAL_NOTIFICATIONS_KEY) || '[]');
+    // Merge with mock notifications that aren't in local (by ID)
+    const merged = [...local];
+    MOCK_NOTIFICATIONS.forEach(mock => {
+        if (!merged.find(n => n.id === mock.id)) {
+            merged.push(mock);
+        }
+    });
+    return merged.sort((a: Notification, b: Notification) => b.timestamp - a.timestamp);
+};
+
+export const markNotificationAsRead = (notiId: string) => {
+    const notis = getNotifications();
+    const updated = notis.map(n => n.id === notiId ? { ...n, isRead: true } : n);
+    // Filter out mocks from saving full list? Better to just save state of mocks.
+    // For simplicity, we just dump the whole merged state to local storage.
+    localStorage.setItem(LOCAL_NOTIFICATIONS_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new Event('notifications-update'));
+};
+
+export const markAllNotificationsAsRead = () => {
+    const notis = getNotifications();
+    const updated = notis.map(n => ({ ...n, isRead: true }));
+    localStorage.setItem(LOCAL_NOTIFICATIONS_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new Event('notifications-update'));
+}
 
 // --- CHAT SERVICES ---
 
@@ -200,11 +292,7 @@ export const createOrGetChat = async (user: User, product: Product): Promise<str
     let sellerId = product.sellerId;
     const buyerId = user.uid;
 
-    // Handle unknown seller case by assigning a bot placeholder so chat can still open
-    if (!sellerId || sellerId === 'unknown-seller') {
-        sellerId = 'bot-seller';
-    }
-
+    if (!sellerId || sellerId === 'unknown-seller') sellerId = 'bot-seller';
     if (sellerId === buyerId) return ""; 
 
     const chatId = sanitizeKey(`${product.id}_${buyerId}`);
@@ -224,20 +312,12 @@ export const createOrGetChat = async (user: User, product: Product): Promise<str
         updatedAt: Date.now()
     };
 
-    // Try Hybrid Approach: Shared Collection -> User Collection -> Local Storage
     try {
-        // Attempt 1: Shared 'chats' collection
         await set(ref(db, `chats/${chatId}`), chatData);
     } catch (error: any) {
-        console.warn("Shared chat creation failed, trying user-private path...", error);
-        
         try {
-            // Attempt 2: Write to my own user_chats node (I can always write to my own node)
             await update(ref(db, `user_chats/${buyerId}/${chatId}`), chatData);
         } catch (innerError) {
-             console.warn("User-private chat creation failed, falling back to local storage.", innerError);
-             
-             // Attempt 3: Local Storage
              const localChats = JSON.parse(localStorage.getItem(LOCAL_CHATS_KEY) || '{}');
              localChats[chatId] = chatData;
              localStorage.setItem(LOCAL_CHATS_KEY, JSON.stringify(localChats));
@@ -259,13 +339,10 @@ export const sendMessage = async (chatId: string, text: string, sender: User, re
         timestamp
     };
 
-    // Hybrid Send
     try {
-        // Try standard path
         const messageRef = ref(db, `messages/${chatId}/${messageId}`);
         await set(messageRef, message);
         
-        // Try update metadata
         try {
             await update(ref(db, `chats/${chatId}`), {
                 lastMessage: text,
@@ -273,7 +350,6 @@ export const sendMessage = async (chatId: string, text: string, sender: User, re
                 updatedAt: timestamp
             });
         } catch (e) {
-            // If shared chat update fails, try updating my own record
              await update(ref(db, `user_chats/${sender.uid}/${chatId}`), {
                 lastMessage: text,
                 lastMessageTime: timestamp,
@@ -281,8 +357,6 @@ export const sendMessage = async (chatId: string, text: string, sender: User, re
             });
         }
     } catch (e) {
-        console.warn("Firebase send failed, using local storage");
-        
         // Save Message Locally
         const allMessages = JSON.parse(localStorage.getItem(LOCAL_MESSAGES_KEY) || '{}');
         if (!allMessages[chatId]) allMessages[chatId] = [];
@@ -306,7 +380,6 @@ export const subscribeToMyChats = (userId: string, callback: (chats: ChatRoom[])
     let sharedUnsub: (() => void) | undefined;
     let privateUnsub: (() => void) | undefined;
     
-    // 1. Helper to read local
     const localChats = () => {
         try {
             const saved = localStorage.getItem(LOCAL_CHATS_KEY);
@@ -314,16 +387,13 @@ export const subscribeToMyChats = (userId: string, callback: (chats: ChatRoom[])
         } catch(e) { return []; }
     };
 
-    // State containers
     let sharedChats: ChatRoom[] = [];
     let privateChats: ChatRoom[] = [];
 
-    // Combiner function
     const updateCombined = () => {
         const local = localChats();
         const map = new Map<string, ChatRoom>();
         
-        // Priority: Shared > Private > Local
         local.forEach((c: any) => map.set(c.id, c));
         privateChats.forEach(c => map.set(c.id, c));
         sharedChats.forEach(c => map.set(c.id, c));
@@ -332,23 +402,18 @@ export const subscribeToMyChats = (userId: string, callback: (chats: ChatRoom[])
         callback(merged);
     };
 
-    // 2. Subscribe Shared
     const sharedQ = query(ref(db, `chats`), orderByChild('updatedAt'));
     sharedUnsub = onValue(sharedQ, (snapshot) => {
         const val = snapshot.val();
         if (val) {
             const all = Object.values(val) as ChatRoom[];
-            // Filter client-side
             sharedChats = all.filter(c => c.participants && Array.isArray(c.participants) && c.participants.includes(userId));
         } else {
             sharedChats = [];
         }
         updateCombined();
-    }, (error) => {
-        console.warn("Shared chats read failed", error);
-    });
+    }, (error) => {});
 
-    // 3. Subscribe Private
     const privateQ = query(ref(db, `user_chats/${userId}`), orderByChild('lastMessageTime'));
     privateUnsub = onValue(privateQ, (snapshot) => {
         const val = snapshot.val();
@@ -358,15 +423,11 @@ export const subscribeToMyChats = (userId: string, callback: (chats: ChatRoom[])
             privateChats = [];
         }
         updateCombined();
-    }, (error) => {
-         console.warn("Private chats read failed", error);
-    });
+    }, (error) => {});
 
-    // 4. Local Event Listener
     const handleLocal = () => updateCombined();
     window.addEventListener('chat-local-update', handleLocal);
 
-    // Initial Trigger
     updateCombined();
 
     return () => {
@@ -390,9 +451,7 @@ export const subscribeToMessages = (chatId: string, callback: (messages: ChatMes
             fbMessages = Object.values(data) as ChatMessage[];
         }
         const local = loadLocal();
-        // Simple merge by ID or timestamp
         const merged = [...fbMessages, ...local].sort((a, b) => a.timestamp - b.timestamp);
-        // Dedupe by ID
         const unique = Array.from(new Map(merged.map(m => [m.id, m])).values());
         callback(unique);
     }, () => {
@@ -415,16 +474,12 @@ export const getChatInfo = async (chatId: string): Promise<ChatRoom | null> => {
      try {
          const snap = await get(ref(db, `chats/${chatId}`));
          if (snap.exists()) return snap.val();
-         
-         // Fallback to user_chats
          const user = auth.currentUser;
          if (user) {
              const userSnap = await get(ref(db, `user_chats/${user.uid}/${chatId}`));
              if (userSnap.exists()) return userSnap.val();
          }
      } catch (e) {}
-
-     // Fallback to local
      const localChats = JSON.parse(localStorage.getItem(LOCAL_CHATS_KEY) || '{}');
      return localChats[chatId] || null;
 };
