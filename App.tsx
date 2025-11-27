@@ -9,6 +9,7 @@ import Chat from './pages/Chat';
 import ChatDetail from './pages/ChatDetail';
 import Notifications from './pages/Notifications';
 import Login from './pages/Login';
+import SearchPage from './pages/SearchPage';
 import NavBar from './components/NavBar';
 import { Product, ViewState } from './types';
 import { auth } from './services/firebase';
@@ -69,7 +70,14 @@ const App: React.FC = () => {
   const renderContent = () => {
     switch (currentView) {
       case ViewState.FEED:
-        return <Feed onProductClick={handleProductClick} onNotificationClick={() => setView(ViewState.NOTIFICATIONS)} locationName={locationName} />;
+        return (
+          <Feed 
+            onProductClick={handleProductClick} 
+            onNotificationClick={() => setView(ViewState.NOTIFICATIONS)} 
+            onSearchClick={() => setView(ViewState.SEARCH)}
+            locationName={locationName} 
+          />
+        );
       
       case ViewState.POST:
         return <Post onBack={() => setView(ViewState.FEED)} onPostComplete={() => setView(ViewState.FEED)} locationName={locationName} user={user!} />;
@@ -79,7 +87,7 @@ const App: React.FC = () => {
       
       case ViewState.DETAIL:
         if (selectedProduct) return <Detail product={selectedProduct} currentUser={user!} onBack={() => setView(ViewState.FEED)} onEdit={handleEditProduct} onChatOpen={handleOpenChat} />;
-        return <Feed onProductClick={handleProductClick} onNotificationClick={() => setView(ViewState.NOTIFICATIONS)} locationName={locationName} />;
+        return <Feed onProductClick={handleProductClick} onNotificationClick={() => setView(ViewState.NOTIFICATIONS)} onSearchClick={() => setView(ViewState.SEARCH)} locationName={locationName} />;
       
       case ViewState.PROFILE:
         return <Profile user={user!} locationName={locationName} onNavigate={setView} />;
@@ -100,8 +108,11 @@ const App: React.FC = () => {
       case ViewState.NOTIFICATIONS:
         return <Notifications onBack={() => setView(ViewState.FEED)} />;
 
+      case ViewState.SEARCH:
+        return <SearchPage onBack={() => setView(ViewState.FEED)} onProductClick={handleProductClick} />;
+
       default:
-        return <Feed onProductClick={handleProductClick} onNotificationClick={() => setView(ViewState.NOTIFICATIONS)} locationName={locationName} />;
+        return <Feed onProductClick={handleProductClick} onNotificationClick={() => setView(ViewState.NOTIFICATIONS)} onSearchClick={() => setView(ViewState.SEARCH)} locationName={locationName} />;
     }
   };
 
@@ -122,7 +133,16 @@ const App: React.FC = () => {
     return <Login />;
   }
 
-  const hideNav = [ViewState.DETAIL, ViewState.POST, ViewState.EDIT_POST, ViewState.CHAT_DETAIL, ViewState.SALES, ViewState.WATCHLIST, ViewState.NOTIFICATIONS].includes(currentView);
+  const hideNav = [
+      ViewState.DETAIL, 
+      ViewState.POST, 
+      ViewState.EDIT_POST, 
+      ViewState.CHAT_DETAIL, 
+      ViewState.SALES, 
+      ViewState.WATCHLIST, 
+      ViewState.NOTIFICATIONS,
+      ViewState.SEARCH
+  ].includes(currentView);
 
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 font-sans mx-auto max-w-md shadow-2xl overflow-hidden relative">

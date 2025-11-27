@@ -23,7 +23,8 @@ export enum ViewState {
   WATCHLIST = 'WATCHLIST',
   CHAT = 'CHAT',
   CHAT_DETAIL = 'CHAT_DETAIL',
-  NOTIFICATIONS = 'NOTIFICATIONS'
+  NOTIFICATIONS = 'NOTIFICATIONS',
+  SEARCH = 'SEARCH'
 }
 
 export interface ChatRoom {

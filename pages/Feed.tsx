@@ -7,12 +7,13 @@ import { Search, MapPin, Bell, ChevronDown } from 'lucide-react';
 interface FeedProps {
   onProductClick: (product: Product) => void;
   onNotificationClick: () => void;
+  onSearchClick: () => void;
   locationName: string;
 }
 
 const CATEGORIES = ['전체', '디지털기기', '가구/인테리어', '유아동', '생활/가전', '여성의류', '남성의류', '스포츠/레저', '취미/게임/음반', '도서'];
 
-const Feed: React.FC<FeedProps> = ({ onProductClick, onNotificationClick, locationName }) => {
+const Feed: React.FC<FeedProps> = ({ onProductClick, onNotificationClick, onSearchClick, locationName }) => {
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,7 +58,10 @@ const Feed: React.FC<FeedProps> = ({ onProductClick, onNotificationClick, locati
             <ChevronDown size={18} className="text-gray-900" />
         </div>
         <div className="flex items-center gap-3">
-            <button className="text-gray-600 hover:bg-gray-100 p-2 rounded-full transition-colors">
+            <button 
+                onClick={onSearchClick}
+                className="text-gray-600 hover:bg-gray-100 p-2 rounded-full transition-colors"
+            >
                 <Search size={24} />
             </button>
             <button 
