@@ -280,66 +280,76 @@ export const sendMessage = async (chatId: string, text: string, sender: User, re
 };
 
 export const subscribeToMyChats = (userId: string, callback: (chats: ChatRoom[]) => void) => {
-    // 1. Load Local Chats first
-    const loadLocal = () => {
-        const localChats = JSON.parse(localStorage.getItem(LOCAL_CHATS_KEY) || '{}');
-        return Object.values(localChats) as ChatRoom[];
+    let sharedUnsub: (() => void) | undefined;
+    let privateUnsub: (() => void) | undefined;
+    
+    // 1. Helper to read local
+    const localChats = () => {
+        try {
+            const saved = localStorage.getItem(LOCAL_CHATS_KEY);
+            return saved ? Object.values(JSON.parse(saved)) : [];
+        } catch(e) { return []; }
     };
 
-    // 2. Subscribe to Firebase
-    const q = query(ref(db, `chats`), orderByChild('updatedAt'));
-    const unsubscribeShared = onValue(q, (snapshot) => {
-        const data = snapshot.val();
-        let firebaseChats: ChatRoom[] = [];
-        if (data) {
-            const all = Object.values(data) as ChatRoom[];
-            firebaseChats = all.filter(chat => chat.participants && chat.participants.includes(userId));
+    // State containers
+    let sharedChats: ChatRoom[] = [];
+    let privateChats: ChatRoom[] = [];
+
+    // Combiner function
+    const updateCombined = () => {
+        const local = localChats();
+        const map = new Map<string, ChatRoom>();
+        
+        // Priority: Shared > Private > Local
+        local.forEach((c: any) => map.set(c.id, c));
+        privateChats.forEach(c => map.set(c.id, c));
+        sharedChats.forEach(c => map.set(c.id, c));
+
+        const merged = Array.from(map.values()).sort((a, b) => b.lastMessageTime - a.lastMessageTime);
+        callback(merged);
+    };
+
+    // 2. Subscribe Shared
+    const sharedQ = query(ref(db, `chats`), orderByChild('updatedAt'));
+    sharedUnsub = onValue(sharedQ, (snapshot) => {
+        const val = snapshot.val();
+        if (val) {
+            const all = Object.values(val) as ChatRoom[];
+            // Filter client-side
+            sharedChats = all.filter(c => c.participants && Array.isArray(c.participants) && c.participants.includes(userId));
+        } else {
+            sharedChats = [];
         }
-        
-        // Merge with local
-        const local = loadLocal();
-        const merged = [...firebaseChats, ...local].reduce((acc, current) => {
-            const x = acc.find(item => item.id === current.id);
-            if (!x) {
-                return acc.concat([current]);
-            } else {
-                return acc;
-            }
-        }, [] as ChatRoom[]);
-        
-        callback(merged.sort((a, b) => b.lastMessageTime - a.lastMessageTime));
+        updateCombined();
     }, (error) => {
-         // If permission denied on root 'chats', try reading 'user_chats/{myId}'
-         const myQ = query(ref(db, `user_chats/${userId}`), orderByChild('lastMessageTime'));
-         onValue(myQ, (snap) => {
-             const val = snap.val();
-             let myFirebaseChats: ChatRoom[] = [];
-             if (val) {
-                 myFirebaseChats = Object.values(val) as ChatRoom[];
-             }
-             const local = loadLocal();
-             const merged = [...myFirebaseChats, ...local];
-             // Dedupe
-             const unique = Array.from(new Map(merged.map(item => [item.id, item])).values());
-             callback(unique.sort((a, b) => b.lastMessageTime - a.lastMessageTime));
-         });
+        console.warn("Shared chats read failed", error);
     });
 
-    // Listen to local events
-    const handleLocalUpdate = () => {
-        // This is simplified; in real app we'd re-trigger the merger. 
-        // For now just forcing a read of local if firebase isn't active
-        // But the firebase callback handles the merge, so we might miss real-time local updates if firebase is silent.
-        // We will trigger a fake update?
-        // Ideally we structure this better, but for now:
-        const local = loadLocal();
-        if (local.length > 0) callback(local.sort((a, b) => b.lastMessageTime - a.lastMessageTime));
-    };
-    window.addEventListener('chat-local-update', handleLocalUpdate);
+    // 3. Subscribe Private
+    const privateQ = query(ref(db, `user_chats/${userId}`), orderByChild('lastMessageTime'));
+    privateUnsub = onValue(privateQ, (snapshot) => {
+        const val = snapshot.val();
+        if (val) {
+            privateChats = Object.values(val) as ChatRoom[];
+        } else {
+            privateChats = [];
+        }
+        updateCombined();
+    }, (error) => {
+         console.warn("Private chats read failed", error);
+    });
+
+    // 4. Local Event Listener
+    const handleLocal = () => updateCombined();
+    window.addEventListener('chat-local-update', handleLocal);
+
+    // Initial Trigger
+    updateCombined();
 
     return () => {
-        unsubscribeShared();
-        window.removeEventListener('chat-local-update', handleLocalUpdate);
+        if (sharedUnsub) sharedUnsub();
+        if (privateUnsub) privateUnsub();
+        window.removeEventListener('chat-local-update', handleLocal);
     };
 };
 
