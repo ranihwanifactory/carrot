@@ -1,0 +1,8 @@
+{
+  "name": "당근 AI 마켓",
+  "description": "AI로 더 똑똑해진 우리 동네 중고 직거래 마켓. AI가 도와주는 쉽고 간편한 거래를 경험해보세요.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
