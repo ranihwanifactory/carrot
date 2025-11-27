@@ -35,18 +35,21 @@ const Detail: React.FC<DetailProps> = ({ product, currentUser, onBack, onEdit, o
 
   const handleStartChat = async () => {
       if (isOwner) {
-          // If owner, maybe go to chat list or specific list of chats for this item
-          // For now, simpler to just go to chat tab
           alert("본인의 상품입니다. 채팅 목록에서 대화를 확인하세요.");
           return;
       }
       setChatLoading(true);
       try {
           const chatId = await createOrGetChat(currentUser, product);
-          onChatOpen(chatId);
-      } catch (e) {
-          console.error(e);
-          alert("채팅방 연결 실패");
+          if (chatId) {
+            onChatOpen(chatId);
+          } else {
+            alert("채팅방을 생성할 수 없습니다.");
+          }
+      } catch (e: any) {
+          console.error("Chat Error:", e);
+          // Show the actual error message to the user
+          alert(`채팅방 연결 실패: ${e.message || "알 수 없는 오류"}`);
       } finally {
           setChatLoading(false);
       }

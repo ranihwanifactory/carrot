@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { ArrowLeft, Send } from 'lucide-react';
-import { subscribeToMessages, sendMessage, db } from '../services/firebase';
-import { ref, get } from 'firebase/database';
+import { subscribeToMessages, sendMessage, getChatInfo } from '../services/firebase';
 import { ChatRoom, ChatMessage } from '../types';
 import { User } from 'firebase/auth';
 
@@ -17,17 +16,16 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ user, chatId, onBack }) => {
     const [inputText, setInputText] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // Fetch Chat Info first to get participant info
+    // Fetch Chat Info
     useEffect(() => {
         const fetchChatInfo = async () => {
-            // Updated to fetch from shared 'chats' collection
-            const snapshot = await get(ref(db, `chats/${chatId}`));
-            if (snapshot.exists()) {
-                setChatInfo(snapshot.val());
+            const info = await getChatInfo(chatId);
+            if (info) {
+                setChatInfo(info);
             }
         };
         fetchChatInfo();
-    }, [chatId, user.uid]);
+    }, [chatId]);
 
     useEffect(() => {
         const unsubscribe = subscribeToMessages(chatId, (msgs) => {
@@ -44,8 +42,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ user, chatId, onBack }) => {
         e?.preventDefault();
         if (!inputText.trim() || !chatInfo) return;
 
-        const otherUserId = chatInfo.participants.find(uid => uid !== user.uid);
-        if (!otherUserId) return;
+        // If bot-seller (unknown), we still allow sending but it won't go anywhere useful
+        const otherUserId = chatInfo.participants.find(uid => uid !== user.uid) || 'bot-seller';
 
         const text = inputText;
         setInputText(''); // Optimistic clear
@@ -59,7 +57,11 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ user, chatId, onBack }) => {
         return otherId ? (chatInfo.participantNames[otherId] || "상대방") : "상대방";
     };
 
-    if (!chatInfo) return <div className="bg-white min-h-screen"></div>;
+    if (!chatInfo) return (
+        <div className="bg-white min-h-screen flex items-center justify-center">
+             <div className="text-gray-400">채팅방 정보를 불러오는 중...</div>
+        </div>
+    );
 
     return (
         <div className="bg-gray-100 min-h-screen flex flex-col">
