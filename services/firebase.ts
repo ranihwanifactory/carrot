@@ -195,11 +195,9 @@ export const createOrGetChat = async (user: User, product: Product): Promise<str
         updatedAt: Date.now()
     };
 
-    // Update for Buyer
-    await update(ref(db, `user_chats/${buyerId}/${chatId}`), chatData);
-    
-    // Update for Seller
-    await update(ref(db, `user_chats/${sellerId}/${chatId}`), chatData);
+    // Use a shared 'chats' collection instead of user-specific paths to avoid permission issues
+    // with cross-user writes in default Firebase rule setups.
+    await set(ref(db, `chats/${chatId}`), chatData);
 
     return chatId;
 };
@@ -217,23 +215,27 @@ export const sendMessage = async (chatId: string, text: string, sender: User, re
 
     await set(messageRef, message);
 
-    // Update Metadata for both users
-    const updates: any = {};
-    updates[`user_chats/${sender.uid}/${chatId}/lastMessage`] = text;
-    updates[`user_chats/${sender.uid}/${chatId}/lastMessageTime`] = timestamp;
-    updates[`user_chats/${receiverId}/${chatId}/lastMessage`] = text;
-    updates[`user_chats/${receiverId}/${chatId}/lastMessageTime`] = timestamp;
-
-    await update(ref(db), updates);
+    // Update the shared chat metadata
+    await update(ref(db, `chats/${chatId}`), {
+        lastMessage: text,
+        lastMessageTime: timestamp,
+        updatedAt: timestamp
+    });
 };
 
 export const subscribeToMyChats = (userId: string, callback: (chats: ChatRoom[]) => void) => {
-    const q = query(ref(db, `user_chats/${userId}`), orderByChild('lastMessageTime'));
+    // We subscribe to the shared 'chats' collection and filter client-side.
+    // This bypasses the restriction of reading other users' private indexes.
+    const q = query(ref(db, `chats`), orderByChild('updatedAt'));
     return onValue(q, (snapshot) => {
         const data = snapshot.val();
         if (data) {
-            const chats = Object.values(data) as ChatRoom[];
-            callback(chats.sort((a, b) => b.lastMessageTime - a.lastMessageTime));
+            const allChats = Object.values(data) as ChatRoom[];
+            // Filter chats where I am a participant
+            const myChats = allChats.filter(chat => 
+                chat.participants && chat.participants.includes(userId)
+            );
+            callback(myChats.sort((a, b) => b.lastMessageTime - a.lastMessageTime));
         } else {
             callback([]);
         }

@@ -20,8 +20,8 @@ const ChatDetail: React.FC<ChatDetailProps> = ({ user, chatId, onBack }) => {
     // Fetch Chat Info first to get participant info
     useEffect(() => {
         const fetchChatInfo = async () => {
-            // We can get it from user_chats/{uid}/{chatId}
-            const snapshot = await get(ref(db, `user_chats/${user.uid}/${chatId}`));
+            // Updated to fetch from shared 'chats' collection
+            const snapshot = await get(ref(db, `chats/${chatId}`));
             if (snapshot.exists()) {
                 setChatInfo(snapshot.val());
             }
