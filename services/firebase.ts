@@ -53,11 +53,21 @@ const MOCK_PRODUCTS: Product[] = [
     }
 ];
 
+// Helper to sanitize product data (legacy support)
+const sanitizeProduct = (p: any): Product => ({
+    ...p,
+    sellerId: p.sellerId || 'unknown-seller',
+    sellerName: p.sellerName || '알 수 없음',
+    likes: p.likes || 0,
+    isSold: !!p.isSold
+});
+
 export const subscribeToProducts = (callback: (products: Product[]) => void) => {
     const loadLocal = () => {
         const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
         const local = saved ? JSON.parse(saved) : [];
-        return [...local, ...MOCK_PRODUCTS].sort((a: Product, b: Product) => b.createdAt - a.createdAt);
+        const migratedLocal = local.map(sanitizeProduct);
+        return [...migratedLocal, ...MOCK_PRODUCTS].sort((a: Product, b: Product) => b.createdAt - a.createdAt);
     };
     
     callback(loadLocal());
@@ -66,10 +76,12 @@ export const subscribeToProducts = (callback: (products: Product[]) => void) => 
     return onValue(q, (snapshot) => {
         const data = snapshot.val();
         if (data) {
-            const firebaseProducts = Object.values(data) as Product[];
+            const firebaseProducts = Object.values(data).map(sanitizeProduct);
             const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
             const local = saved ? JSON.parse(saved) : [];
-            const allProducts = [...firebaseProducts, ...local, ...MOCK_PRODUCTS]
+            const migratedLocal = local.map(sanitizeProduct);
+            
+            const allProducts = [...firebaseProducts, ...migratedLocal, ...MOCK_PRODUCTS]
                 .filter((v, i, a) => a.findIndex(t => t.id === v.id) === i)
                 .sort((a, b) => b.createdAt - a.createdAt);
             callback(allProducts);
@@ -157,21 +169,22 @@ export const getMyLikedProductIds = (): string[] => {
 // --- CHAT SERVICES ---
 
 export const createOrGetChat = async (user: User, product: Product): Promise<string> => {
-    // Unique ID for a chat: productID + buyerID + sellerID (sorted to avoid duplicates if needed, but here structure is strict)
-    // Structure: user_chats / {userId} / {chatId}
-    // We will generate a Chat ID based on product and buyer to ensure one chat per product per buyer.
-    
-    const chatId = `${product.id}_${user.uid}`;
     const sellerId = product.sellerId;
     const buyerId = user.uid;
 
+    if (!sellerId || sellerId === 'unknown-seller') {
+        throw new Error("판매자 정보를 찾을 수 없어 채팅을 시작할 수 없습니다. (오래된 데이터일 수 있습니다)");
+    }
+
     if (sellerId === buyerId) return ""; // Cannot chat with self
+
+    const chatId = `${product.id}_${buyerId}`;
 
     const chatData: ChatRoom = {
         id: chatId,
         productId: product.id,
         productTitle: product.title,
-        productImage: product.imageUrl,
+        productImage: product.imageUrl || '',
         participants: [buyerId, sellerId],
         participantNames: {
             [buyerId]: user.displayName || "구매자",
