@@ -2,16 +2,18 @@ import React, { useState, useRef } from 'react';
 import { ArrowLeft, Camera, Wand2, Loader2, DollarSign } from 'lucide-react';
 import { createProduct } from '../services/firebase';
 import { enhanceDescription, suggestPrice } from '../services/geminiService';
-import { ViewState } from '../types';
+import { User } from 'firebase/auth';
 
 interface PostProps {
   onBack: () => void;
   onPostComplete: () => void;
+  locationName: string;
+  user: User;
 }
 
 const categories = ["디지털기기", "가구/인테리어", "유아동", "생활/가전", "여성의류", "남성의류", "스포츠/레저", "취미/게임/음반", "뷰티/미용", "반려동물용품", "도서", "기타 중고물품"];
 
-const Post: React.FC<PostProps> = ({ onBack, onPostComplete }) => {
+const Post: React.FC<PostProps> = ({ onBack, onPostComplete, locationName, user }) => {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState(categories[0]);
   const [price, setPrice] = useState('');
@@ -65,10 +67,10 @@ const Post: React.FC<PostProps> = ({ onBack, onPostComplete }) => {
         description,
         category,
         imageUrl: image,
-        location: "역삼1동", // Default location
+        location: locationName, 
         createdAt: Date.now(),
         likes: 0,
-        sellerName: "나",
+        sellerName: user.displayName || user.email?.split('@')[0] || "당근이웃",
         isSold: false
       });
       onPostComplete();

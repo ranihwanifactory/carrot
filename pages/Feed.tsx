@@ -1,33 +1,40 @@
 import React, { useEffect, useState } from 'react';
-import { onValue, query, orderByChild } from 'firebase/database';
-import { productsRef } from '../services/firebase';
+import { subscribeToProducts } from '../services/firebase';
 import { Product } from '../types';
 import ProductCard from '../components/ProductCard';
-import { Search, MapPin, Bell } from 'lucide-react';
+import { Search, MapPin, Bell, ChevronDown } from 'lucide-react';
 
 interface FeedProps {
   onProductClick: (product: Product) => void;
+  locationName: string;
 }
 
-const Feed: React.FC<FeedProps> = ({ onProductClick }) => {
+const Feed: React.FC<FeedProps> = ({ onProductClick, locationName }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const q = query(productsRef, orderByChild('createdAt'));
-    const unsubscribe = onValue(q, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        // Firebase returns object of objects, convert to array and reverse (newest first)
-        const productList = Object.values(data) as Product[];
-        setProducts(productList.reverse());
-      } else {
-        setProducts([]);
-      }
-      setLoading(false);
-    });
+  const fetchProducts = () => {
+      const unsubscribe = subscribeToProducts((data) => {
+          setProducts(data);
+          setLoading(false);
+      });
+      return unsubscribe;
+  };
 
-    return () => unsubscribe();
+  useEffect(() => {
+    const unsubscribe = fetchProducts();
+    
+    const handleLocalUpdate = () => {
+        unsubscribe();
+        fetchProducts();
+    };
+    
+    window.addEventListener('product-local-update', handleLocalUpdate);
+
+    return () => {
+        unsubscribe();
+        window.removeEventListener('product-local-update', handleLocalUpdate);
+    };
   }, []);
 
   return (
@@ -35,31 +42,31 @@ const Feed: React.FC<FeedProps> = ({ onProductClick }) => {
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm px-4 py-3 flex items-center justify-between border-b border-gray-100">
         <div className="flex items-center gap-1 cursor-pointer hover:opacity-70 transition-opacity">
-            <h1 className="text-lg font-bold text-gray-900">역삼1동</h1>
-            <MapPin size={16} className="text-gray-900" />
+            <h1 className="text-lg font-bold text-gray-900">{locationName}</h1>
+            <ChevronDown size={18} className="text-gray-900" />
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
             <button className="text-gray-600 hover:bg-gray-100 p-2 rounded-full transition-colors">
-                <Search size={22} />
+                <Search size={24} />
             </button>
             <button className="text-gray-600 hover:bg-gray-100 p-2 rounded-full transition-colors relative">
-                <Bell size={22} />
-                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+                <Bell size={24} />
+                <span className="absolute top-2 right-2.5 w-1.5 h-1.5 bg-red-500 rounded-full border border-white"></span>
             </button>
         </div>
       </header>
 
       {/* Categories / Filter Scroll */}
       <div className="px-4 py-3 flex gap-2 overflow-x-auto no-scrollbar">
-          {['전체', '디지털기기', '가구/인테리어', '유아동', '여성의류', '스포츠/레저', '취미/게임/음반', '도서'].map((cat, idx) => (
-              <button key={cat} className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${idx === 0 ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>
+          {['전체', '디지털기기', '가구/인테리어', '유아동', '여성의류', '스포츠/레저', '취미/게임', '도서'].map((cat, idx) => (
+              <button key={cat} className={`px-3 py-1.5 rounded-full text-[13px] font-medium whitespace-nowrap transition-colors border ${idx === 0 ? 'bg-gray-800 text-white border-gray-800' : 'bg-white border-gray-200 text-gray-600'}`}>
                   {cat}
               </button>
           ))}
       </div>
 
       {/* Feed */}
-      <div className="px-4 space-y-3 mt-1">
+      <div className="px-4 space-y-4 mt-1">
         {loading ? (
            <div className="space-y-4 pt-4">
               {[1, 2, 3].map(i => (

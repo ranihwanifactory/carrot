@@ -11,15 +11,18 @@ export const enhanceDescription = async (title: string, rawDetails: string, cate
 
   try {
     const prompt = `
-      당신은 '당근마켓'과 같은 중고거래 앱의 전문 카피라이터입니다.
-      다음 물건에 대해 친근하고 신뢰가 가는 한국어 상품 설명을 작성해주세요:
+      당신은 한국 최고의 중고거래 앱 '당근'의 전문 에디터입니다.
+      아래 물건에 대해 구매자가 읽고 싶어하는 매력적이고 친절한 한국어 판매글을 작성해주세요.
       
-      물건: ${title}
+      물건 이름: ${title}
       카테고리: ${category}
-      제공된 상세 정보: ${rawDetails}
+      사용자 입력 정보: ${rawDetails}
       
-      150자 이내로 작성해주세요. 적절한 이모지를 사용하세요. 물건의 가치와 상태에 집중해서 작성해주세요.
-      오직 설명 텍스트만 반환해주세요.
+      규칙:
+      1. 150자 이내로 간결하게 작성하세요.
+      2. 이모지를 적절히 사용하여 친근감을 주세요.
+      3. 물건의 상태와 장점을 자연스럽게 강조하세요.
+      4. 오직 판매글 본문 내용만 반환하세요 (인사말이나 부가 설명 제외).
     `;
 
     const response = await ai.models.generateContent({
@@ -38,8 +41,8 @@ export const suggestPrice = async (title: string, category: string): Promise<str
     if (!apiKey) return "";
     
     try {
-        const prompt = `중고거래 앱 카테고리 "${category}"에 있는 중고 "${title}"의 적정 중고 시세를 한국 원화(KRW) 기준으로 추정해주세요.
-        오직 가격 범위 문자열만 반환해주세요 (예: "10,000원 - 15,000원"). 짧게 답변해주세요.`;
+        const prompt = `한국 중고거래 시장 기준, "${category}" 카테고리의 "${title}" 적정 중고 시세를 알려주세요.
+        결과는 오직 가격 범위만 출력하세요 (예: "10,000원 ~ 15,000원").`;
         
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
