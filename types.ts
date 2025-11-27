@@ -24,7 +24,8 @@ export enum ViewState {
   CHAT = 'CHAT',
   CHAT_DETAIL = 'CHAT_DETAIL',
   NOTIFICATIONS = 'NOTIFICATIONS',
-  SEARCH = 'SEARCH'
+  SEARCH = 'SEARCH',
+  CATEGORY = 'CATEGORY'
 }
 
 export interface ChatRoom {

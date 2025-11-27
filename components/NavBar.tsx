@@ -12,13 +12,10 @@ const NavBar: React.FC<NavBarProps> = ({ currentView, setView }) => {
   const [hasUnread, setHasUnread] = useState(false);
 
   useEffect(() => {
-    // Simple notification simulation: If any chat exists, assuming active for now. 
-    // Real unread logic requires storing 'lastReadTime' vs 'lastMessageTime'.
-    // For this MVP, we just check if there are chats.
+    // Simple notification simulation
     const user = auth.currentUser;
     if (user) {
         const unsubscribe = subscribeToMyChats(user.uid, (chats) => {
-            // Mock logic: randomly show dot or if chats exist
              setHasUnread(chats.length > 0); 
         });
         return unsubscribe;
@@ -36,8 +33,8 @@ const NavBar: React.FC<NavBarProps> = ({ currentView, setView }) => {
           <span className="text-[10px] font-medium">홈</span>
         </button>
         
-        <button className={navItemClass(ViewState.PROFILE)}> 
-          <LayoutGrid size={24} strokeWidth={2} />
+        <button onClick={() => setView(ViewState.CATEGORY)} className={navItemClass(ViewState.CATEGORY)}> 
+          <LayoutGrid size={24} strokeWidth={currentView === ViewState.CATEGORY ? 2.5 : 2} />
            <span className="text-[10px] font-medium">카테고리</span>
         </button>
         

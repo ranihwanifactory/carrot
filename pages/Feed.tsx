@@ -9,15 +9,26 @@ interface FeedProps {
   onNotificationClick: () => void;
   onSearchClick: () => void;
   locationName: string;
+  initialCategory?: string;
 }
 
-const CATEGORIES = ['전체', '디지털기기', '가구/인테리어', '유아동', '생활/가전', '여성의류', '남성의류', '스포츠/레저', '취미/게임/음반', '도서'];
+// Unified categories list for display in scroll bar
+const CATEGORIES = ['전체', '디지털기기', '가구/인테리어', '유아동', '생활/가전', '여성의류', '남성의류', '스포츠/레저', '취미/게임/음반', '뷰티/미용', '반려동물용품', '도서'];
 
-const Feed: React.FC<FeedProps> = ({ onProductClick, onNotificationClick, onSearchClick, locationName }) => {
+const Feed: React.FC<FeedProps> = ({ onProductClick, onNotificationClick, onSearchClick, locationName, initialCategory }) => {
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('전체');
+
+  // Sync prop changes
+  useEffect(() => {
+    if (initialCategory) {
+        setSelectedCategory(initialCategory);
+    } else {
+        setSelectedCategory('전체');
+    }
+  }, [initialCategory]);
 
   const fetchProducts = () => {
       const unsubscribe = subscribeToProducts((data) => {

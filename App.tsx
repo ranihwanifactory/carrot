@@ -10,6 +10,7 @@ import ChatDetail from './pages/ChatDetail';
 import Notifications from './pages/Notifications';
 import Login from './pages/Login';
 import SearchPage from './pages/SearchPage';
+import CategoryPage from './pages/CategoryPage';
 import NavBar from './components/NavBar';
 import { Product, ViewState } from './types';
 import { auth } from './services/firebase';
@@ -24,6 +25,7 @@ const App: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [locationName, setLocationName] = useState<string>("위치 찾는 중...");
+  const [feedCategory, setFeedCategory] = useState<string | undefined>(undefined);
 
   // Auth Listener
   useEffect(() => {
@@ -67,6 +69,15 @@ const App: React.FC = () => {
       setView(ViewState.CHAT_DETAIL);
   };
 
+  const handleCategorySelect = (category: string) => {
+      setFeedCategory(category);
+      setView(ViewState.FEED);
+  };
+
+  // Reset category when navigating to feed via other means if needed, 
+  // but usually users expect persistence. To mimic navbar 'Home' reset,
+  // we could handle it in setView wrapper, but keeping simple for now.
+
   const renderContent = () => {
     switch (currentView) {
       case ViewState.FEED:
@@ -76,8 +87,12 @@ const App: React.FC = () => {
             onNotificationClick={() => setView(ViewState.NOTIFICATIONS)} 
             onSearchClick={() => setView(ViewState.SEARCH)}
             locationName={locationName} 
+            initialCategory={feedCategory}
           />
         );
+      
+      case ViewState.CATEGORY:
+        return <CategoryPage onSelect={handleCategorySelect} />;
       
       case ViewState.POST:
         return <Post onBack={() => setView(ViewState.FEED)} onPostComplete={() => setView(ViewState.FEED)} locationName={locationName} user={user!} />;
