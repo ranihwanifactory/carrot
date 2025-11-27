@@ -11,6 +11,9 @@ import Notifications from './pages/Notifications';
 import Login from './pages/Login';
 import SearchPage from './pages/SearchPage';
 import CategoryPage from './pages/CategoryPage';
+import ProfileDetail from './pages/ProfileDetail';
+import Settings from './pages/Settings';
+import KeywordSettings from './pages/KeywordSettings';
 import NavBar from './components/NavBar';
 import { Product, ViewState } from './types';
 import { auth } from './services/firebase';
@@ -107,6 +110,15 @@ const App: React.FC = () => {
       case ViewState.PROFILE:
         return <Profile user={user!} locationName={locationName} onNavigate={setView} />;
       
+      case ViewState.PROFILE_DETAIL:
+        return <ProfileDetail user={user!} locationName={locationName} onBack={() => setView(ViewState.PROFILE)} onProductClick={handleProductClick} />;
+
+      case ViewState.SETTINGS:
+        return <Settings user={user!} onBack={() => setView(ViewState.PROFILE)} />;
+
+      case ViewState.KEYWORD_SETTINGS:
+        return <KeywordSettings onBack={() => setView(ViewState.PROFILE)} />;
+      
       case ViewState.SALES:
         return <Sales user={user!} onBack={() => setView(ViewState.PROFILE)} onProductClick={handleProductClick} />;
       
@@ -156,7 +168,10 @@ const App: React.FC = () => {
       ViewState.SALES, 
       ViewState.WATCHLIST, 
       ViewState.NOTIFICATIONS,
-      ViewState.SEARCH
+      ViewState.SEARCH,
+      ViewState.SETTINGS,
+      ViewState.KEYWORD_SETTINGS,
+      ViewState.PROFILE_DETAIL
   ].includes(currentView);
 
   return (

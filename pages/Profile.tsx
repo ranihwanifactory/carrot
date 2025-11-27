@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, Settings, Heart, ShoppingBag, CreditCard, LogOut, MessageCircle } from 'lucide-react';
+import { User, Settings, Heart, ShoppingBag, CreditCard, LogOut, MessageCircle, Tag } from 'lucide-react';
 import { signOut, auth } from '../services/firebase';
 import { User as FirebaseUser } from 'firebase/auth';
 import { ViewState } from '../types';
@@ -14,8 +14,9 @@ const Profile: React.FC<ProfileProps> = ({ user, locationName, onNavigate }) => 
   const menuItems = [
     { icon: <Heart size={20} />, label: '관심목록', view: ViewState.WATCHLIST },
     { icon: <ShoppingBag size={20} />, label: '판매내역', view: ViewState.SALES },
+    { icon: <Tag size={20} />, label: '키워드 알림', view: ViewState.KEYWORD_SETTINGS },
     { icon: <MessageCircle size={20} />, label: '채팅하기', view: ViewState.CHAT }, // Shortcut
-    { icon: <Settings size={20} />, label: '계정 설정', view: ViewState.PROFILE },
+    { icon: <Settings size={20} />, label: '계정 설정', view: ViewState.SETTINGS },
   ];
 
   const handleLogout = () => {
@@ -45,7 +46,10 @@ const Profile: React.FC<ProfileProps> = ({ user, locationName, onNavigate }) => 
                 <p className="text-sm text-gray-500">{locationName} • #{user.uid.slice(0,6)}</p>
             </div>
         </div>
-        <button className="w-full mt-4 border border-gray-300 py-2 rounded-lg font-medium text-sm text-gray-700 hover:bg-gray-50">
+        <button 
+            onClick={() => onNavigate(ViewState.PROFILE_DETAIL)}
+            className="w-full mt-4 border border-gray-300 py-2 rounded-lg font-medium text-sm text-gray-700 hover:bg-gray-50"
+        >
             프로필 보기
         </button>
       </div>

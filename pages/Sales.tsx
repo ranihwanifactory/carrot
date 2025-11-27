@@ -26,23 +26,24 @@ const Sales: React.FC<SalesProps> = ({ user, onBack, onProductClick }) => {
 
     const displayProducts = products.filter(p => activeTab === 'selling' ? !p.isSold : p.isSold);
 
-    const handleMarkAsSold = async (e: React.MouseEvent, product: Product) => {
+    const handleStatusChange = async (e: React.MouseEvent, product: Product, isSold: boolean) => {
         e.stopPropagation();
-        if (window.confirm("판매완료 처리하시겠습니까?")) {
-            await updateProduct({ ...product, isSold: true });
+        const action = isSold ? "판매완료" : "판매중";
+        if (window.confirm(`${action} 상태로 변경하시겠습니까?`)) {
+            await updateProduct({ ...product, isSold: isSold });
         }
     };
 
     return (
         <div className="bg-white min-h-screen">
-            <header className="bg-white p-4 flex items-center gap-3 border-b border-gray-100 sticky top-0">
+            <header className="bg-white p-4 flex items-center gap-3 border-b border-gray-100 sticky top-0 z-10">
                 <button onClick={onBack}>
                     <ArrowLeft size={24} />
                 </button>
                 <h1 className="text-lg font-bold">판매내역</h1>
             </header>
             
-            <div className="flex border-b border-gray-100">
+            <div className="flex border-b border-gray-100 sticky top-[60px] bg-white z-10">
                 <button 
                     onClick={() => setActiveTab('selling')}
                     className={`flex-1 py-3 text-sm font-bold text-center border-b-2 ${activeTab === 'selling' ? 'border-primary text-gray-900' : 'border-transparent text-gray-400'}`}
@@ -61,16 +62,23 @@ const Sales: React.FC<SalesProps> = ({ user, onBack, onProductClick }) => {
                 {displayProducts.length > 0 ? displayProducts.map(p => (
                     <div key={p.id} className="relative">
                         <ProductCard product={p} onClick={onProductClick} />
-                        {!p.isSold && (
-                            <div className="absolute bottom-4 right-4">
+                        <div className="absolute bottom-4 right-4 flex gap-2">
+                             {!p.isSold ? (
                                 <button 
-                                    onClick={(e) => handleMarkAsSold(e, p)}
-                                    className="bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
+                                    onClick={(e) => handleStatusChange(e, p, true)}
+                                    className="bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors border border-gray-200"
                                 >
                                     거래완료로 변경
                                 </button>
-                            </div>
-                        )}
+                             ) : (
+                                <button 
+                                    onClick={(e) => handleStatusChange(e, p, false)}
+                                    className="bg-white hover:bg-gray-50 text-gray-800 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors border border-gray-300"
+                                >
+                                    판매중으로 변경
+                                </button>
+                             )}
+                        </div>
                     </div>
                 )) : (
                     <div className="py-20 text-center text-gray-400">

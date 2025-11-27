@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getDatabase, ref, push, set, onValue, update, query, orderByChild, remove, get } from "firebase/database";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, User } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, User, updateProfile } from "firebase/auth";
 import { Product, ChatRoom, ChatMessage, Notification } from "../types";
 
 const firebaseConfig = {
@@ -24,6 +24,7 @@ const LOCAL_CHATS_KEY = 'carrot_local_chats';
 const LOCAL_MESSAGES_KEY = 'carrot_local_messages';
 const LOCAL_HIDDEN_IDS_KEY = 'carrot_hidden_ids'; // For deleted products (both mock and real)
 const LOCAL_NOTIFICATIONS_KEY = 'carrot_notifications';
+const LOCAL_KEYWORDS_KEY = 'carrot_keywords';
 
 // Mock data for initial populated feel
 const MOCK_PRODUCTS: Product[] = [
@@ -182,6 +183,9 @@ export const createProduct = async (product: Omit<Product, 'id'>) => {
     const newProduct = { ...product, id: newId };
 
     try {
+        // Trigger Keyword Check
+        checkKeywordsAndNotify(newProduct);
+
         // Try Firebase
         const fbRef = push(productsRef);
         const fbId = fbRef.key;
@@ -253,6 +257,47 @@ export const getMyLikedProductIds = (): string[] => {
     return JSON.parse(localStorage.getItem('my_likes') || '[]');
 };
 
+// --- KEYWORD SERVICES ---
+
+export const getKeywords = (): string[] => {
+    return JSON.parse(localStorage.getItem(LOCAL_KEYWORDS_KEY) || '[]');
+};
+
+export const addKeyword = (keyword: string) => {
+    const keywords = getKeywords();
+    if (!keywords.includes(keyword)) {
+        keywords.push(keyword);
+        localStorage.setItem(LOCAL_KEYWORDS_KEY, JSON.stringify(keywords));
+    }
+};
+
+export const removeKeyword = (keyword: string) => {
+    const keywords = getKeywords();
+    const newKeywords = keywords.filter(k => k !== keyword);
+    localStorage.setItem(LOCAL_KEYWORDS_KEY, JSON.stringify(newKeywords));
+};
+
+const checkKeywordsAndNotify = (product: Product | Omit<Product, 'id'>) => {
+    const keywords = getKeywords();
+    const matched = keywords.find(k => product.title.includes(k) || product.description.includes(k));
+    
+    if (matched) {
+        const newNotification: Notification = {
+            id: `noti-key-${Date.now()}`,
+            type: 'KEYWORD',
+            text: `"${matched}" 키워드 알림`,
+            subText: `새로운 상품이 등록되었습니다: ${product.title}`,
+            timestamp: Date.now(),
+            isRead: false
+        };
+        
+        const currentNotis = getNotifications();
+        currentNotis.unshift(newNotification); // Add to beginning
+        localStorage.setItem(LOCAL_NOTIFICATIONS_KEY, JSON.stringify(currentNotis));
+        window.dispatchEvent(new Event('notifications-update'));
+    }
+};
+
 // --- NOTIFICATION SERVICES ---
 
 export const getNotifications = (): Notification[] => {
@@ -270,8 +315,6 @@ export const getNotifications = (): Notification[] => {
 export const markNotificationAsRead = (notiId: string) => {
     const notis = getNotifications();
     const updated = notis.map(n => n.id === notiId ? { ...n, isRead: true } : n);
-    // Filter out mocks from saving full list? Better to just save state of mocks.
-    // For simplicity, we just dump the whole merged state to local storage.
     localStorage.setItem(LOCAL_NOTIFICATIONS_KEY, JSON.stringify(updated));
     window.dispatchEvent(new Event('notifications-update'));
 };
@@ -282,6 +325,19 @@ export const markAllNotificationsAsRead = () => {
     localStorage.setItem(LOCAL_NOTIFICATIONS_KEY, JSON.stringify(updated));
     window.dispatchEvent(new Event('notifications-update'));
 }
+
+// --- USER PROFILE SERVICES ---
+export const updateUserProfile = async (user: User, displayName: string, photoURL?: string) => {
+    try {
+        await updateProfile(user, { displayName, photoURL });
+        // Force refresh user state in auth listener if needed, usually automatic
+        return true;
+    } catch (e) {
+        console.error("Profile update failed", e);
+        throw e;
+    }
+}
+
 
 // --- CHAT SERVICES ---
 
