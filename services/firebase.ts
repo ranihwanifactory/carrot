@@ -188,4 +188,245 @@ export const toggleLike = (productId: string, currentLikes: number) => {
 };
 
 export const getMyLikedProductIds = (): string[] => {
-    return JSON.parse(localStorage.getItem('my_likes')
+    return JSON.parse(localStorage.getItem('my_likes') || '[]');
+};
+
+// --- CHAT SERVICES ---
+
+// Sanitize string for Firebase keys (no '.', '#', '$', '[', ']')
+const sanitizeKey = (key: string) => key.replace(/[.#$\[\]]/g, '_');
+
+export const createOrGetChat = async (user: User, product: Product): Promise<string> => {
+    let sellerId = product.sellerId;
+    const buyerId = user.uid;
+
+    // Handle unknown seller case by assigning a bot placeholder so chat can still open
+    if (!sellerId || sellerId === 'unknown-seller') {
+        sellerId = 'bot-seller';
+    }
+
+    if (sellerId === buyerId) return ""; 
+
+    const chatId = sanitizeKey(`${product.id}_${buyerId}`);
+
+    const chatData: ChatRoom = {
+        id: chatId,
+        productId: product.id,
+        productTitle: product.title,
+        productImage: product.imageUrl || '',
+        participants: [buyerId, sellerId],
+        participantNames: {
+            [buyerId]: user.displayName || "구매자",
+            [sellerId]: product.sellerName || "판매자"
+        },
+        lastMessage: "대화가 시작되었습니다.",
+        lastMessageTime: Date.now(),
+        updatedAt: Date.now()
+    };
+
+    // Try Hybrid Approach: Shared Collection -> User Collection -> Local Storage
+    try {
+        // Attempt 1: Shared 'chats' collection
+        await set(ref(db, `chats/${chatId}`), chatData);
+    } catch (error: any) {
+        console.warn("Shared chat creation failed, trying user-private path...", error);
+        
+        try {
+            // Attempt 2: Write to my own user_chats node (I can always write to my own node)
+            await update(ref(db, `user_chats/${buyerId}/${chatId}`), chatData);
+        } catch (innerError) {
+             console.warn("User-private chat creation failed, falling back to local storage.", innerError);
+             
+             // Attempt 3: Local Storage
+             const localChats = JSON.parse(localStorage.getItem(LOCAL_CHATS_KEY) || '{}');
+             localChats[chatId] = chatData;
+             localStorage.setItem(LOCAL_CHATS_KEY, JSON.stringify(localChats));
+             window.dispatchEvent(new Event('chat-local-update'));
+        }
+    }
+
+    return chatId;
+};
+
+export const sendMessage = async (chatId: string, text: string, sender: User, receiverId: string) => {
+    const timestamp = Date.now();
+    const messageId = `msg-${timestamp}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const message: ChatMessage = {
+        id: messageId,
+        senderId: sender.uid,
+        text,
+        timestamp
+    };
+
+    // Hybrid Send
+    try {
+        // Try standard path
+        const messageRef = ref(db, `messages/${chatId}/${messageId}`);
+        await set(messageRef, message);
+        
+        // Try update metadata
+        try {
+            await update(ref(db, `chats/${chatId}`), {
+                lastMessage: text,
+                lastMessageTime: timestamp,
+                updatedAt: timestamp
+            });
+        } catch (e) {
+            // If shared chat update fails, try updating my own record
+             await update(ref(db, `user_chats/${sender.uid}/${chatId}`), {
+                lastMessage: text,
+                lastMessageTime: timestamp,
+                updatedAt: timestamp
+            });
+        }
+    } catch (e) {
+        console.warn("Firebase send failed, using local storage");
+        
+        // Save Message Locally
+        const allMessages = JSON.parse(localStorage.getItem(LOCAL_MESSAGES_KEY) || '{}');
+        if (!allMessages[chatId]) allMessages[chatId] = [];
+        allMessages[chatId].push(message);
+        localStorage.setItem(LOCAL_MESSAGES_KEY, JSON.stringify(allMessages));
+        
+        // Update Chat Metadata Locally
+        const localChats = JSON.parse(localStorage.getItem(LOCAL_CHATS_KEY) || '{}');
+        if (localChats[chatId]) {
+            localChats[chatId].lastMessage = text;
+            localChats[chatId].lastMessageTime = timestamp;
+            localStorage.setItem(LOCAL_CHATS_KEY, JSON.stringify(localChats));
+        }
+        
+        window.dispatchEvent(new Event(`chat-messages-update-${chatId}`));
+        window.dispatchEvent(new Event('chat-local-update'));
+    }
+};
+
+export const subscribeToMyChats = (userId: string, callback: (chats: ChatRoom[]) => void) => {
+    let sharedUnsub: (() => void) | undefined;
+    let privateUnsub: (() => void) | undefined;
+    
+    // 1. Helper to read local
+    const localChats = () => {
+        try {
+            const saved = localStorage.getItem(LOCAL_CHATS_KEY);
+            return saved ? Object.values(JSON.parse(saved)) : [];
+        } catch(e) { return []; }
+    };
+
+    // State containers
+    let sharedChats: ChatRoom[] = [];
+    let privateChats: ChatRoom[] = [];
+
+    // Combiner function
+    const updateCombined = () => {
+        const local = localChats();
+        const map = new Map<string, ChatRoom>();
+        
+        // Priority: Shared > Private > Local
+        local.forEach((c: any) => map.set(c.id, c));
+        privateChats.forEach(c => map.set(c.id, c));
+        sharedChats.forEach(c => map.set(c.id, c));
+
+        const merged = Array.from(map.values()).sort((a, b) => b.lastMessageTime - a.lastMessageTime);
+        callback(merged);
+    };
+
+    // 2. Subscribe Shared
+    const sharedQ = query(ref(db, `chats`), orderByChild('updatedAt'));
+    sharedUnsub = onValue(sharedQ, (snapshot) => {
+        const val = snapshot.val();
+        if (val) {
+            const all = Object.values(val) as ChatRoom[];
+            // Filter client-side
+            sharedChats = all.filter(c => c.participants && Array.isArray(c.participants) && c.participants.includes(userId));
+        } else {
+            sharedChats = [];
+        }
+        updateCombined();
+    }, (error) => {
+        console.warn("Shared chats read failed", error);
+    });
+
+    // 3. Subscribe Private
+    const privateQ = query(ref(db, `user_chats/${userId}`), orderByChild('lastMessageTime'));
+    privateUnsub = onValue(privateQ, (snapshot) => {
+        const val = snapshot.val();
+        if (val) {
+            privateChats = Object.values(val) as ChatRoom[];
+        } else {
+            privateChats = [];
+        }
+        updateCombined();
+    }, (error) => {
+         console.warn("Private chats read failed", error);
+    });
+
+    // 4. Local Event Listener
+    const handleLocal = () => updateCombined();
+    window.addEventListener('chat-local-update', handleLocal);
+
+    // Initial Trigger
+    updateCombined();
+
+    return () => {
+        if (sharedUnsub) sharedUnsub();
+        if (privateUnsub) privateUnsub();
+        window.removeEventListener('chat-local-update', handleLocal);
+    };
+};
+
+export const subscribeToMessages = (chatId: string, callback: (messages: ChatMessage[]) => void) => {
+    const loadLocal = () => {
+        const allMessages = JSON.parse(localStorage.getItem(LOCAL_MESSAGES_KEY) || '{}');
+        return (allMessages[chatId] || []) as ChatMessage[];
+    };
+
+    const q = query(ref(db, `messages/${chatId}`), orderByChild('timestamp'));
+    const unsubscribe = onValue(q, (snapshot) => {
+        const data = snapshot.val();
+        let fbMessages: ChatMessage[] = [];
+        if (data) {
+            fbMessages = Object.values(data) as ChatMessage[];
+        }
+        const local = loadLocal();
+        // Simple merge by ID or timestamp
+        const merged = [...fbMessages, ...local].sort((a, b) => a.timestamp - b.timestamp);
+        // Dedupe by ID
+        const unique = Array.from(new Map(merged.map(m => [m.id, m])).values());
+        callback(unique);
+    }, () => {
+        callback(loadLocal());
+    });
+
+    const handleLocalUpdate = () => {
+         const local = loadLocal();
+         callback(local);
+    };
+    window.addEventListener(`chat-messages-update-${chatId}`, handleLocalUpdate);
+
+    return () => {
+        unsubscribe();
+        window.removeEventListener(`chat-messages-update-${chatId}`, handleLocalUpdate);
+    };
+};
+
+export const getChatInfo = async (chatId: string): Promise<ChatRoom | null> => {
+     try {
+         const snap = await get(ref(db, `chats/${chatId}`));
+         if (snap.exists()) return snap.val();
+         
+         // Fallback to user_chats
+         const user = auth.currentUser;
+         if (user) {
+             const userSnap = await get(ref(db, `user_chats/${user.uid}/${chatId}`));
+             if (userSnap.exists()) return userSnap.val();
+         }
+     } catch (e) {}
+
+     // Fallback to local
+     const localChats = JSON.parse(localStorage.getItem(LOCAL_CHATS_KEY) || '{}');
+     return localChats[chatId] || null;
+};
+
+export { db, auth, googleProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut };
