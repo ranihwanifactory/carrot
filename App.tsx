@@ -6,6 +6,7 @@ import Profile from './pages/Profile';
 import Sales from './pages/Sales';
 import Watchlist from './pages/Watchlist';
 import Chat from './pages/Chat';
+import ChatDetail from './pages/ChatDetail';
 import Login from './pages/Login';
 import NavBar from './components/NavBar';
 import { Product, ViewState } from './types';
@@ -19,6 +20,7 @@ const App: React.FC = () => {
   const [authLoading, setAuthLoading] = useState(true);
   const [currentView, setView] = useState<ViewState>(ViewState.FEED);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [locationName, setLocationName] = useState<string>("위치 찾는 중...");
 
   // Auth Listener
@@ -58,9 +60,9 @@ const App: React.FC = () => {
       setView(ViewState.EDIT_POST);
   };
 
-  const handleChat = (product: Product) => {
-      // In a real app, this would open a specific chat room
-      setView(ViewState.CHAT);
+  const handleOpenChat = (chatId: string) => {
+      setActiveChatId(chatId);
+      setView(ViewState.CHAT_DETAIL);
   };
 
   const renderContent = () => {
@@ -75,7 +77,7 @@ const App: React.FC = () => {
         return <Post onBack={() => setView(ViewState.DETAIL)} onPostComplete={() => setView(ViewState.FEED)} locationName={locationName} user={user!} initialData={selectedProduct!} />;
       
       case ViewState.DETAIL:
-        if (selectedProduct) return <Detail product={selectedProduct} currentUser={user!} onBack={() => setView(ViewState.FEED)} onEdit={handleEditProduct} onChat={handleChat} />;
+        if (selectedProduct) return <Detail product={selectedProduct} currentUser={user!} onBack={() => setView(ViewState.FEED)} onEdit={handleEditProduct} onChatOpen={handleOpenChat} />;
         return <Feed onProductClick={handleProductClick} locationName={locationName} />;
       
       case ViewState.PROFILE:
@@ -88,7 +90,11 @@ const App: React.FC = () => {
         return <Watchlist onBack={() => setView(ViewState.PROFILE)} onProductClick={handleProductClick} />;
         
       case ViewState.CHAT:
-        return <Chat onBack={() => setView(ViewState.FEED)} />;
+        return <Chat user={user!} onBack={() => setView(ViewState.FEED)} onChatClick={handleOpenChat} />;
+
+      case ViewState.CHAT_DETAIL:
+        if (activeChatId) return <ChatDetail user={user!} chatId={activeChatId} onBack={() => setView(ViewState.CHAT)} />;
+        return <Chat user={user!} onBack={() => setView(ViewState.FEED)} onChatClick={handleOpenChat} />;
 
       default:
         return <Feed onProductClick={handleProductClick} locationName={locationName} />;
@@ -112,7 +118,7 @@ const App: React.FC = () => {
     return <Login />;
   }
 
-  const hideNav = [ViewState.DETAIL, ViewState.POST, ViewState.EDIT_POST, ViewState.CHAT, ViewState.SALES, ViewState.WATCHLIST].includes(currentView);
+  const hideNav = [ViewState.DETAIL, ViewState.POST, ViewState.EDIT_POST, ViewState.CHAT_DETAIL, ViewState.SALES, ViewState.WATCHLIST].includes(currentView);
 
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 font-sans mx-auto max-w-md shadow-2xl overflow-hidden relative">

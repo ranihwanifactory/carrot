@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Share2, Heart, MoreVertical, ShieldCheck, User as UserIcon, Edit, Trash, MessageCircle } from 'lucide-react';
+import { ArrowLeft, Share2, Heart, MoreVertical, ShieldCheck, User as UserIcon, Edit, Trash, MessageCircle, Loader2 } from 'lucide-react';
 import { Product } from '../types';
-import { toggleLike, deleteProduct, getMyLikedProductIds } from '../services/firebase';
+import { toggleLike, deleteProduct, getMyLikedProductIds, createOrGetChat } from '../services/firebase';
 import { User } from 'firebase/auth';
 
 interface DetailProps {
@@ -9,11 +9,12 @@ interface DetailProps {
   currentUser: User;
   onBack: () => void;
   onEdit: (product: Product) => void;
-  onChat: (product: Product) => void;
+  onChatOpen: (chatId: string) => void;
 }
 
-const Detail: React.FC<DetailProps> = ({ product, currentUser, onBack, onEdit, onChat }) => {
+const Detail: React.FC<DetailProps> = ({ product, currentUser, onBack, onEdit, onChatOpen }) => {
   const [showMenu, setShowMenu] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
   const isOwner = currentUser.uid === product.sellerId;
   const isLiked = getMyLikedProductIds().includes(product.id);
   const [localLiked, setLocalLiked] = useState(isLiked);
@@ -30,7 +31,26 @@ const Detail: React.FC<DetailProps> = ({ product, currentUser, onBack, onEdit, o
           await deleteProduct(product.id);
           onBack();
       }
-  }
+  };
+
+  const handleStartChat = async () => {
+      if (isOwner) {
+          // If owner, maybe go to chat list or specific list of chats for this item
+          // For now, simpler to just go to chat tab
+          alert("본인의 상품입니다. 채팅 목록에서 대화를 확인하세요.");
+          return;
+      }
+      setChatLoading(true);
+      try {
+          const chatId = await createOrGetChat(currentUser, product);
+          onChatOpen(chatId);
+      } catch (e) {
+          console.error(e);
+          alert("채팅방 연결 실패");
+      } finally {
+          setChatLoading(false);
+      }
+  };
 
   return (
     <div className="bg-white min-h-screen pb-24 relative">
@@ -133,22 +153,15 @@ const Detail: React.FC<DetailProps> = ({ product, currentUser, onBack, onEdit, o
                 {!isOwner && <span className="text-xs text-primary font-medium">가격 제안 불가</span>}
             </div>
             
-            {isOwner ? (
-                <button 
-                    onClick={() => onChat(product)}
-                    className="bg-gray-100 text-gray-900 font-bold py-3 px-8 rounded-xl transition-colors"
-                >
-                    대화 중인 채팅방
-                </button>
-            ) : (
-                <button 
-                    onClick={() => onChat(product)}
-                    className="bg-primary hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-xl transition-colors shadow-lg shadow-orange-200 active:scale-95 flex items-center gap-2"
-                >
-                    <MessageCircle size={18} />
-                    채팅하기
-                </button>
-            )}
+            <button 
+                onClick={handleStartChat}
+                disabled={chatLoading}
+                className={`${isOwner ? 'bg-gray-100 text-gray-900' : 'bg-primary hover:bg-orange-600 text-white shadow-lg shadow-orange-200'} font-bold py-3 px-8 rounded-xl transition-colors active:scale-95 flex items-center gap-2 disabled:opacity-70`}
+            >
+                {chatLoading ? <Loader2 size={18} className="animate-spin" /> : (
+                    isOwner ? "대화 목록" : <><MessageCircle size={18} /> 채팅하기</>
+                )}
+            </button>
         </div>
       </div>
     </div>

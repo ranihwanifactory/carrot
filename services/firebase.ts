@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
-import { getDatabase, ref, push, set, onValue, update, query, orderByChild, remove } from "firebase/database";
+import { getDatabase, ref, push, set, onValue, update, query, orderByChild, remove, get } from "firebase/database";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, User } from "firebase/auth";
-import { Product } from "../types";
+import { Product, ChatRoom, ChatMessage } from "../types";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCljhEUeggqRKk18EeQPsE_EsDOqfmWdOw",
@@ -128,17 +128,13 @@ export const deleteProduct = async (productId: string) => {
 };
 
 export const toggleLike = (productId: string, currentLikes: number) => {
-    // We also store "my likes" in local storage to simulate a watchlist feature
     const likesKey = 'my_likes';
     const myLikes = JSON.parse(localStorage.getItem(likesKey) || '[]');
     
     if (myLikes.includes(productId)) {
-        // Unlike
         const newLikes = myLikes.filter((id: string) => id !== productId);
         localStorage.setItem(likesKey, JSON.stringify(newLikes));
-        // Decrease count visually (simulated for local products)
     } else {
-        // Like
         myLikes.push(productId);
         localStorage.setItem(likesKey, JSON.stringify(myLikes));
     }
@@ -146,7 +142,7 @@ export const toggleLike = (productId: string, currentLikes: number) => {
     try {
         if (!productId.startsWith('local-') && !productId.startsWith('mock-')) {
             const productRef = ref(db, `products/${productId}`);
-            update(productRef, { likes: currentLikes + 1 }); // Naive increment
+            update(productRef, { likes: currentLikes + 1 });
         }
     } catch (e) {
         console.log("Offline like toggle");
@@ -156,6 +152,92 @@ export const toggleLike = (productId: string, currentLikes: number) => {
 
 export const getMyLikedProductIds = (): string[] => {
     return JSON.parse(localStorage.getItem('my_likes') || '[]');
+};
+
+// --- CHAT SERVICES ---
+
+export const createOrGetChat = async (user: User, product: Product): Promise<string> => {
+    // Unique ID for a chat: productID + buyerID + sellerID (sorted to avoid duplicates if needed, but here structure is strict)
+    // Structure: user_chats / {userId} / {chatId}
+    // We will generate a Chat ID based on product and buyer to ensure one chat per product per buyer.
+    
+    const chatId = `${product.id}_${user.uid}`;
+    const sellerId = product.sellerId;
+    const buyerId = user.uid;
+
+    if (sellerId === buyerId) return ""; // Cannot chat with self
+
+    const chatData: ChatRoom = {
+        id: chatId,
+        productId: product.id,
+        productTitle: product.title,
+        productImage: product.imageUrl,
+        participants: [buyerId, sellerId],
+        participantNames: {
+            [buyerId]: user.displayName || "구매자",
+            [sellerId]: product.sellerName || "판매자"
+        },
+        lastMessage: "대화가 시작되었습니다.",
+        lastMessageTime: Date.now(),
+        updatedAt: Date.now()
+    };
+
+    // Update for Buyer
+    await update(ref(db, `user_chats/${buyerId}/${chatId}`), chatData);
+    
+    // Update for Seller
+    await update(ref(db, `user_chats/${sellerId}/${chatId}`), chatData);
+
+    return chatId;
+};
+
+export const sendMessage = async (chatId: string, text: string, sender: User, receiverId: string) => {
+    const messageRef = push(ref(db, `messages/${chatId}`));
+    const timestamp = Date.now();
+    
+    const message: ChatMessage = {
+        id: messageRef.key!,
+        senderId: sender.uid,
+        text,
+        timestamp
+    };
+
+    await set(messageRef, message);
+
+    // Update Metadata for both users
+    const updates: any = {};
+    updates[`user_chats/${sender.uid}/${chatId}/lastMessage`] = text;
+    updates[`user_chats/${sender.uid}/${chatId}/lastMessageTime`] = timestamp;
+    updates[`user_chats/${receiverId}/${chatId}/lastMessage`] = text;
+    updates[`user_chats/${receiverId}/${chatId}/lastMessageTime`] = timestamp;
+
+    await update(ref(db), updates);
+};
+
+export const subscribeToMyChats = (userId: string, callback: (chats: ChatRoom[]) => void) => {
+    const q = query(ref(db, `user_chats/${userId}`), orderByChild('lastMessageTime'));
+    return onValue(q, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            const chats = Object.values(data) as ChatRoom[];
+            callback(chats.sort((a, b) => b.lastMessageTime - a.lastMessageTime));
+        } else {
+            callback([]);
+        }
+    });
+};
+
+export const subscribeToMessages = (chatId: string, callback: (messages: ChatMessage[]) => void) => {
+    const q = query(ref(db, `messages/${chatId}`), orderByChild('timestamp'));
+    return onValue(q, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            const msgs = Object.values(data) as ChatMessage[];
+            callback(msgs);
+        } else {
+            callback([]);
+        }
+    });
 };
 
 export { db, auth, googleProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut };

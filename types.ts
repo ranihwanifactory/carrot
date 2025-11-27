@@ -16,13 +16,13 @@ export interface Product {
 export enum ViewState {
   FEED = 'FEED',
   POST = 'POST',
-  EDIT_POST = 'EDIT_POST', // New
+  EDIT_POST = 'EDIT_POST',
   DETAIL = 'DETAIL',
   PROFILE = 'PROFILE',
-  SALES = 'SALES', // New
-  WATCHLIST = 'WATCHLIST', // New
-  CHAT = 'CHAT', // New
-  CHAT_DETAIL = 'CHAT_DETAIL' // New
+  SALES = 'SALES',
+  WATCHLIST = 'WATCHLIST',
+  CHAT = 'CHAT',
+  CHAT_DETAIL = 'CHAT_DETAIL'
 }
 
 export interface ChatRoom {
@@ -30,9 +30,18 @@ export interface ChatRoom {
   productId: string;
   productTitle: string;
   productImage: string;
-  otherUserName: string;
+  participants: string[];
+  participantNames: { [uid: string]: string }; // Map uid to name for display
   lastMessage: string;
   lastMessageTime: number;
+  updatedAt: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  text: string;
+  timestamp: number;
 }
 
 export interface Coordinates {

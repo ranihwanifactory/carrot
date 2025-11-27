@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Home, PlusCircle, User, MessageCircle, LayoutGrid } from 'lucide-react';
 import { ViewState } from '../types';
+import { subscribeToMyChats, auth } from '../services/firebase';
 
 interface NavBarProps {
   currentView: ViewState;
@@ -8,6 +9,22 @@ interface NavBarProps {
 }
 
 const NavBar: React.FC<NavBarProps> = ({ currentView, setView }) => {
+  const [hasUnread, setHasUnread] = useState(false);
+
+  useEffect(() => {
+    // Simple notification simulation: If any chat exists, assuming active for now. 
+    // Real unread logic requires storing 'lastReadTime' vs 'lastMessageTime'.
+    // For this MVP, we just check if there are chats.
+    const user = auth.currentUser;
+    if (user) {
+        const unsubscribe = subscribeToMyChats(user.uid, (chats) => {
+            // Mock logic: randomly show dot or if chats exist
+             setHasUnread(chats.length > 0); 
+        });
+        return unsubscribe;
+    }
+  }, []);
+
   const navItemClass = (view: ViewState) => 
     `flex flex-col items-center justify-center w-full h-full space-y-1 ${currentView === view ? 'text-primary' : 'text-gray-400 hover:text-gray-600'}`;
 
@@ -20,7 +37,6 @@ const NavBar: React.FC<NavBarProps> = ({ currentView, setView }) => {
         </button>
         
         <button className={navItemClass(ViewState.PROFILE)}> 
-             {/* Placeholder for future features */}
           <LayoutGrid size={24} strokeWidth={2} />
            <span className="text-[10px] font-medium">카테고리</span>
         </button>
@@ -31,10 +47,12 @@ const NavBar: React.FC<NavBarProps> = ({ currentView, setView }) => {
             </div>
         </button>
 
-        <button className="flex flex-col items-center justify-center w-full h-full space-y-1 text-gray-400">
-           {/* Placeholder */}
-           <MessageCircle size={24} strokeWidth={2} />
+        <button onClick={() => setView(ViewState.CHAT)} className={`${navItemClass(ViewState.CHAT)} relative`}>
+           <MessageCircle size={24} strokeWidth={currentView === ViewState.CHAT ? 2.5 : 2} />
            <span className="text-[10px] font-medium">채팅</span>
+           {hasUnread && (
+               <span className="absolute top-2 right-4 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+           )}
         </button>
 
         <button onClick={() => setView(ViewState.PROFILE)} className={navItemClass(ViewState.PROFILE)}>
