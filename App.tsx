@@ -3,6 +3,9 @@ import Feed from './pages/Feed';
 import Post from './pages/Post';
 import Detail from './pages/Detail';
 import Profile from './pages/Profile';
+import Sales from './pages/Sales';
+import Watchlist from './pages/Watchlist';
+import Chat from './pages/Chat';
 import Login from './pages/Login';
 import NavBar from './components/NavBar';
 import { Product, ViewState } from './types';
@@ -44,19 +47,52 @@ const App: React.FC = () => {
     }
   }, [user]);
 
-  // Simple Router Logic
+  // Routing Logic
   const handleProductClick = (product: Product) => {
     setSelectedProduct(product);
     setView(ViewState.DETAIL);
   };
 
-  const handleBackToFeed = () => {
-    setSelectedProduct(null);
-    setView(ViewState.FEED);
+  const handleEditProduct = (product: Product) => {
+      setSelectedProduct(product);
+      setView(ViewState.EDIT_POST);
   };
 
-  const handlePostComplete = () => {
-    setView(ViewState.FEED);
+  const handleChat = (product: Product) => {
+      // In a real app, this would open a specific chat room
+      setView(ViewState.CHAT);
+  };
+
+  const renderContent = () => {
+    switch (currentView) {
+      case ViewState.FEED:
+        return <Feed onProductClick={handleProductClick} locationName={locationName} />;
+      
+      case ViewState.POST:
+        return <Post onBack={() => setView(ViewState.FEED)} onPostComplete={() => setView(ViewState.FEED)} locationName={locationName} user={user!} />;
+      
+      case ViewState.EDIT_POST:
+        return <Post onBack={() => setView(ViewState.DETAIL)} onPostComplete={() => setView(ViewState.FEED)} locationName={locationName} user={user!} initialData={selectedProduct!} />;
+      
+      case ViewState.DETAIL:
+        if (selectedProduct) return <Detail product={selectedProduct} currentUser={user!} onBack={() => setView(ViewState.FEED)} onEdit={handleEditProduct} onChat={handleChat} />;
+        return <Feed onProductClick={handleProductClick} locationName={locationName} />;
+      
+      case ViewState.PROFILE:
+        return <Profile user={user!} locationName={locationName} onNavigate={setView} />;
+      
+      case ViewState.SALES:
+        return <Sales user={user!} onBack={() => setView(ViewState.PROFILE)} onProductClick={handleProductClick} />;
+      
+      case ViewState.WATCHLIST:
+        return <Watchlist onBack={() => setView(ViewState.PROFILE)} onProductClick={handleProductClick} />;
+        
+      case ViewState.CHAT:
+        return <Chat onBack={() => setView(ViewState.FEED)} />;
+
+      default:
+        return <Feed onProductClick={handleProductClick} locationName={locationName} />;
+    }
   };
 
   if (authLoading) {
@@ -76,22 +112,7 @@ const App: React.FC = () => {
     return <Login />;
   }
 
-  // Render content based on state
-  const renderContent = () => {
-    switch (currentView) {
-      case ViewState.FEED:
-        return <Feed onProductClick={handleProductClick} locationName={locationName} />;
-      case ViewState.POST:
-        return <Post onBack={() => setView(ViewState.FEED)} onPostComplete={handlePostComplete} locationName={locationName} user={user} />;
-      case ViewState.DETAIL:
-        if (selectedProduct) return <Detail product={selectedProduct} onBack={handleBackToFeed} />;
-        return <Feed onProductClick={handleProductClick} locationName={locationName} />;
-      case ViewState.PROFILE:
-        return <Profile user={user} locationName={locationName} />;
-      default:
-        return <Feed onProductClick={handleProductClick} locationName={locationName} />;
-    }
-  };
+  const hideNav = [ViewState.DETAIL, ViewState.POST, ViewState.EDIT_POST, ViewState.CHAT, ViewState.SALES, ViewState.WATCHLIST].includes(currentView);
 
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 font-sans mx-auto max-w-md shadow-2xl overflow-hidden relative">
@@ -99,8 +120,7 @@ const App: React.FC = () => {
         {renderContent()}
       </div>
       
-      {/* Show Bottom Nav unless in Detail or Post view to maximize screen space */}
-      {currentView !== ViewState.DETAIL && currentView !== ViewState.POST && (
+      {!hideNav && (
         <NavBar currentView={currentView} setView={setView} />
       )}
     </div>

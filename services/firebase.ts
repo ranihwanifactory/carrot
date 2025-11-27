@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getDatabase, ref, push, set, onValue, update, query, orderByChild } from "firebase/database";
+import { getDatabase, ref, push, set, onValue, update, query, orderByChild, remove } from "firebase/database";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, User } from "firebase/auth";
 import { Product } from "../types";
 
@@ -34,6 +34,7 @@ const MOCK_PRODUCTS: Product[] = [
         createdAt: Date.now() - 3600000 * 2, // 2 hours ago
         likes: 12,
         sellerName: '당근러',
+        sellerId: 'mock-user-1',
         isSold: false
     },
     {
@@ -47,40 +48,33 @@ const MOCK_PRODUCTS: Product[] = [
         createdAt: Date.now() - 3600000 * 24, // 1 day ago
         likes: 8,
         sellerName: '미니멀리스트',
+        sellerId: 'mock-user-2',
         isSold: true
     }
 ];
 
 export const subscribeToProducts = (callback: (products: Product[]) => void) => {
-    // 1. Load Local + Mock Data First
     const loadLocal = () => {
         const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
         const local = saved ? JSON.parse(saved) : [];
         return [...local, ...MOCK_PRODUCTS].sort((a: Product, b: Product) => b.createdAt - a.createdAt);
     };
     
-    // Initial callback with local data
     callback(loadLocal());
 
-    // 2. Try Firebase Subscription
     const q = query(productsRef, orderByChild('createdAt'));
     return onValue(q, (snapshot) => {
         const data = snapshot.val();
         if (data) {
             const firebaseProducts = Object.values(data) as Product[];
-            // Merge with local data (simple concat)
             const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
             const local = saved ? JSON.parse(saved) : [];
-            // Combine and sort
             const allProducts = [...firebaseProducts, ...local, ...MOCK_PRODUCTS]
-                .filter((v, i, a) => a.findIndex(t => t.id === v.id) === i) // Uniqueness check by ID
+                .filter((v, i, a) => a.findIndex(t => t.id === v.id) === i)
                 .sort((a, b) => b.createdAt - a.createdAt);
-                
             callback(allProducts);
         }
     }, (error) => {
-        console.warn("Firebase permission denied or error. Running in offline/demo mode.", error);
-        // Fallback is already handled by initial load
         callback(loadLocal());
     });
 };
@@ -92,7 +86,6 @@ export const createProduct = async (product: Omit<Product, 'id'>) => {
     try {
         await set(ref(db, `products/${newId}`), newProduct);
     } catch (e) {
-        console.warn("Firebase write failed (Permission Denied). Saving locally.", e);
         const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
         const products = saved ? JSON.parse(saved) : [];
         products.push(newProduct);
@@ -102,13 +95,67 @@ export const createProduct = async (product: Omit<Product, 'id'>) => {
     return newId;
 };
 
-export const toggleLike = (productId: string, currentLikes: number) => {
+export const updateProduct = async (product: Product) => {
     try {
-        const productRef = ref(db, `products/${productId}`);
-        update(productRef, { likes: currentLikes + 1 });
+        if (product.id.startsWith('local-')) {
+            const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+            let products = saved ? JSON.parse(saved) : [];
+            products = products.map((p: Product) => p.id === product.id ? product : p);
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(products));
+            window.dispatchEvent(new Event('product-local-update'));
+        } else {
+            await update(ref(db, `products/${product.id}`), product);
+        }
+    } catch (e) {
+        console.error("Update failed", e);
+    }
+};
+
+export const deleteProduct = async (productId: string) => {
+    try {
+        if (productId.startsWith('local-')) {
+            const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+            let products = saved ? JSON.parse(saved) : [];
+            products = products.filter((p: Product) => p.id !== productId);
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(products));
+            window.dispatchEvent(new Event('product-local-update'));
+        } else {
+            await remove(ref(db, `products/${productId}`));
+        }
+    } catch (e) {
+        console.error("Delete failed", e);
+    }
+};
+
+export const toggleLike = (productId: string, currentLikes: number) => {
+    // We also store "my likes" in local storage to simulate a watchlist feature
+    const likesKey = 'my_likes';
+    const myLikes = JSON.parse(localStorage.getItem(likesKey) || '[]');
+    
+    if (myLikes.includes(productId)) {
+        // Unlike
+        const newLikes = myLikes.filter((id: string) => id !== productId);
+        localStorage.setItem(likesKey, JSON.stringify(newLikes));
+        // Decrease count visually (simulated for local products)
+    } else {
+        // Like
+        myLikes.push(productId);
+        localStorage.setItem(likesKey, JSON.stringify(myLikes));
+    }
+
+    try {
+        if (!productId.startsWith('local-') && !productId.startsWith('mock-')) {
+            const productRef = ref(db, `products/${productId}`);
+            update(productRef, { likes: currentLikes + 1 }); // Naive increment
+        }
     } catch (e) {
         console.log("Offline like toggle");
     }
+    window.dispatchEvent(new Event('product-local-update'));
+};
+
+export const getMyLikedProductIds = (): string[] => {
+    return JSON.parse(localStorage.getItem('my_likes') || '[]');
 };
 
 export { db, auth, googleProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut };

@@ -9,13 +9,17 @@ interface FeedProps {
   locationName: string;
 }
 
+const CATEGORIES = ['전체', '디지털기기', '가구/인테리어', '유아동', '생활/가전', '여성의류', '남성의류', '스포츠/레저', '취미/게임/음반', '도서'];
+
 const Feed: React.FC<FeedProps> = ({ onProductClick, locationName }) => {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState('전체');
 
   const fetchProducts = () => {
       const unsubscribe = subscribeToProducts((data) => {
-          setProducts(data);
+          setAllProducts(data);
           setLoading(false);
       });
       return unsubscribe;
@@ -23,19 +27,25 @@ const Feed: React.FC<FeedProps> = ({ onProductClick, locationName }) => {
 
   useEffect(() => {
     const unsubscribe = fetchProducts();
-    
     const handleLocalUpdate = () => {
         unsubscribe();
         fetchProducts();
     };
-    
     window.addEventListener('product-local-update', handleLocalUpdate);
-
     return () => {
         unsubscribe();
         window.removeEventListener('product-local-update', handleLocalUpdate);
     };
   }, []);
+
+  // Filter logic
+  useEffect(() => {
+      if (selectedCategory === '전체') {
+          setFilteredProducts(allProducts);
+      } else {
+          setFilteredProducts(allProducts.filter(p => p.category === selectedCategory));
+      }
+  }, [selectedCategory, allProducts]);
 
   return (
     <div className="pb-24">
@@ -58,8 +68,12 @@ const Feed: React.FC<FeedProps> = ({ onProductClick, locationName }) => {
 
       {/* Categories / Filter Scroll */}
       <div className="px-4 py-3 flex gap-2 overflow-x-auto no-scrollbar">
-          {['전체', '디지털기기', '가구/인테리어', '유아동', '여성의류', '스포츠/레저', '취미/게임', '도서'].map((cat, idx) => (
-              <button key={cat} className={`px-3 py-1.5 rounded-full text-[13px] font-medium whitespace-nowrap transition-colors border ${idx === 0 ? 'bg-gray-800 text-white border-gray-800' : 'bg-white border-gray-200 text-gray-600'}`}>
+          {CATEGORIES.map((cat, idx) => (
+              <button 
+                key={cat} 
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-3 py-1.5 rounded-full text-[13px] font-medium whitespace-nowrap transition-colors border ${selectedCategory === cat ? 'bg-gray-800 text-white border-gray-800' : 'bg-white border-gray-200 text-gray-600'}`}
+              >
                   {cat}
               </button>
           ))}
@@ -80,8 +94,8 @@ const Feed: React.FC<FeedProps> = ({ onProductClick, locationName }) => {
                   </div>
               ))}
            </div>
-        ) : products.length > 0 ? (
-          products.map(product => (
+        ) : filteredProducts.length > 0 ? (
+          filteredProducts.map(product => (
             <ProductCard key={product.id} product={product} onClick={onProductClick} />
           ))
         ) : (
@@ -89,7 +103,9 @@ const Feed: React.FC<FeedProps> = ({ onProductClick, locationName }) => {
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                 <Search className="text-gray-400" />
             </div>
-            <h3 className="text-gray-900 font-medium text-lg">등록된 매물이 없어요</h3>
+            <h3 className="text-gray-900 font-medium text-lg">
+                {selectedCategory === '전체' ? '등록된 매물이 없어요' : `${selectedCategory} 매물이 없어요`}
+            </h3>
             <p className="text-gray-500 text-sm mt-1">첫 번째 매물을 등록해보세요!</p>
           </div>
         )}

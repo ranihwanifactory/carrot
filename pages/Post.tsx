@@ -1,30 +1,34 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, Camera, Wand2, Loader2, DollarSign } from 'lucide-react';
-import { createProduct } from '../services/firebase';
+import { createProduct, updateProduct } from '../services/firebase';
 import { enhanceDescription, suggestPrice } from '../services/geminiService';
 import { User } from 'firebase/auth';
+import { Product } from '../types';
 
 interface PostProps {
   onBack: () => void;
   onPostComplete: () => void;
   locationName: string;
   user: User;
+  initialData?: Product; // If provided, we are in edit mode
 }
 
 const categories = ["디지털기기", "가구/인테리어", "유아동", "생활/가전", "여성의류", "남성의류", "스포츠/레저", "취미/게임/음반", "뷰티/미용", "반려동물용품", "도서", "기타 중고물품"];
 
-const Post: React.FC<PostProps> = ({ onBack, onPostComplete, locationName, user }) => {
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState(categories[0]);
-  const [price, setPrice] = useState('');
-  const [description, setDescription] = useState('');
-  const [image, setImage] = useState<string | null>(null);
+const Post: React.FC<PostProps> = ({ onBack, onPostComplete, locationName, user, initialData }) => {
+  const [title, setTitle] = useState(initialData?.title || '');
+  const [category, setCategory] = useState(initialData?.category || categories[0]);
+  const [price, setPrice] = useState(initialData?.price.toString() || '');
+  const [description, setDescription] = useState(initialData?.description || '');
+  const [image, setImage] = useState<string | null>(initialData?.imageUrl || null);
+  
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [isSuggestingPrice, setIsSuggestingPrice] = useState(false);
   const [priceSuggestion, setPriceSuggestion] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isEditMode = !!initialData;
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -61,22 +65,34 @@ const Post: React.FC<PostProps> = ({ onBack, onPostComplete, locationName, user 
 
     setLoading(true);
     try {
-      await createProduct({
-        title,
-        price: parseInt(price.replace(/,/g, '')),
-        description,
-        category,
-        imageUrl: image,
-        location: locationName, 
-        createdAt: Date.now(),
-        likes: 0,
-        sellerName: user.displayName || user.email?.split('@')[0] || "당근이웃",
-        isSold: false
-      });
+      if (isEditMode && initialData) {
+         await updateProduct({
+             ...initialData,
+             title,
+             price: parseInt(price.replace(/,/g, '')),
+             description,
+             category,
+             imageUrl: image,
+         });
+      } else {
+         await createProduct({
+            title,
+            price: parseInt(price.replace(/,/g, '')),
+            description,
+            category,
+            imageUrl: image,
+            location: locationName, 
+            createdAt: Date.now(),
+            likes: 0,
+            sellerName: user.displayName || user.email?.split('@')[0] || "당근이웃",
+            sellerId: user.uid,
+            isSold: false
+         });
+      }
       onPostComplete();
     } catch (error) {
       console.error(error);
-      alert("업로드에 실패했습니다.");
+      alert("실패했습니다.");
     } finally {
       setLoading(false);
     }
@@ -90,13 +106,13 @@ const Post: React.FC<PostProps> = ({ onBack, onPostComplete, locationName, user 
             <ArrowLeft size={20} />
             <span>닫기</span>
         </button>
-        <h2 className="font-bold text-lg">내 물건 팔기</h2>
+        <h2 className="font-bold text-lg">{isEditMode ? "게시글 수정" : "내 물건 팔기"}</h2>
         <button 
           onClick={handleSubmit} 
           disabled={loading}
           className="text-primary font-bold disabled:opacity-50"
         >
-          {loading ? '업로드 중...' : '완료'}
+          {loading ? '저장 중...' : '완료'}
         </button>
       </header>
 

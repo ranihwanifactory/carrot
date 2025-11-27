@@ -1,19 +1,21 @@
 import React from 'react';
-import { User, Settings, Heart, ShoppingBag, CreditCard, LogOut } from 'lucide-react';
+import { User, Settings, Heart, ShoppingBag, CreditCard, LogOut, MessageCircle } from 'lucide-react';
 import { signOut, auth } from '../services/firebase';
 import { User as FirebaseUser } from 'firebase/auth';
+import { ViewState } from '../types';
 
 interface ProfileProps {
     user: FirebaseUser;
     locationName: string;
+    onNavigate: (view: ViewState) => void;
 }
 
-const Profile: React.FC<ProfileProps> = ({ user, locationName }) => {
+const Profile: React.FC<ProfileProps> = ({ user, locationName, onNavigate }) => {
   const menuItems = [
-    { icon: <Heart size={20} />, label: '관심목록' },
-    { icon: <ShoppingBag size={20} />, label: '판매내역' },
-    { icon: <CreditCard size={20} />, label: '당근페이' },
-    { icon: <Settings size={20} />, label: '계정 설정' },
+    { icon: <Heart size={20} />, label: '관심목록', view: ViewState.WATCHLIST },
+    { icon: <ShoppingBag size={20} />, label: '판매내역', view: ViewState.SALES },
+    { icon: <MessageCircle size={20} />, label: '채팅하기', view: ViewState.CHAT }, // Shortcut
+    { icon: <Settings size={20} />, label: '계정 설정', view: ViewState.PROFILE },
   ];
 
   const handleLogout = () => {
@@ -60,7 +62,11 @@ const Profile: React.FC<ProfileProps> = ({ user, locationName }) => {
 
          <div className="bg-white">
             {menuItems.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-3 p-4 border-b border-gray-50 active:bg-gray-50 cursor-pointer">
+                <div 
+                    key={idx} 
+                    onClick={() => item.view && onNavigate(item.view)}
+                    className="flex items-center gap-3 p-4 border-b border-gray-50 active:bg-gray-50 cursor-pointer"
+                >
                     <div className="text-gray-600">{item.icon}</div>
                     <span className="text-gray-900 font-medium">{item.label}</span>
                 </div>
