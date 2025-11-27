@@ -1,21 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, X, Plus } from 'lucide-react';
+import { ArrowLeft, X } from 'lucide-react';
 import { getKeywords, addKeyword, removeKeyword } from '../services/firebase';
+import { User } from 'firebase/auth';
 
 interface KeywordSettingsProps {
+    user?: User;
     onBack: () => void;
 }
 
-const KeywordSettings: React.FC<KeywordSettingsProps> = ({ onBack }) => {
+const KeywordSettings: React.FC<KeywordSettingsProps> = ({ user, onBack }) => {
     const [keywords, setKeywords] = useState<string[]>([]);
     const [input, setInput] = useState('');
 
     useEffect(() => {
-        setKeywords(getKeywords());
-    }, []);
+        if (user) {
+            setKeywords(getKeywords(user.uid));
+        }
+    }, [user]);
 
     const handleAdd = (e?: React.FormEvent) => {
         e?.preventDefault();
+        if (!user) return;
+        
         const trimmed = input.trim();
         if (trimmed) {
             if (keywords.length >= 30) {
@@ -26,16 +32,19 @@ const KeywordSettings: React.FC<KeywordSettingsProps> = ({ onBack }) => {
                 alert("이미 등록된 키워드입니다.");
                 return;
             }
-            addKeyword(trimmed);
+            addKeyword(user.uid, trimmed);
             setKeywords([...keywords, trimmed]);
             setInput('');
         }
     };
 
     const handleRemove = (kw: string) => {
-        removeKeyword(kw);
+        if (!user) return;
+        removeKeyword(user.uid, kw);
         setKeywords(keywords.filter(k => k !== kw));
     };
+
+    if (!user) return null;
 
     return (
         <div className="bg-white min-h-screen">

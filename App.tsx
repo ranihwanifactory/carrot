@@ -16,7 +16,7 @@ import Settings from './pages/Settings';
 import KeywordSettings from './pages/KeywordSettings';
 import NavBar from './components/NavBar';
 import { Product, ViewState } from './types';
-import { auth } from './services/firebase';
+import { auth, startKeywordMonitoring } from './services/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { getCurrentLocation, getAddressName } from './services/locationService';
 import { Loader2 } from 'lucide-react';
@@ -38,6 +38,16 @@ const App: React.FC = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  // Start Keyword Monitoring when user is logged in
+  useEffect(() => {
+    if (user) {
+        const unsubscribe = startKeywordMonitoring(user.uid);
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
+    }
+  }, [user]);
 
   // Location Fetcher
   useEffect(() => {
@@ -117,7 +127,7 @@ const App: React.FC = () => {
         return <Settings user={user!} onBack={() => setView(ViewState.PROFILE)} />;
 
       case ViewState.KEYWORD_SETTINGS:
-        return <KeywordSettings onBack={() => setView(ViewState.PROFILE)} />;
+        return <KeywordSettings user={user!} onBack={() => setView(ViewState.PROFILE)} />;
       
       case ViewState.SALES:
         return <Sales user={user!} onBack={() => setView(ViewState.PROFILE)} onProductClick={handleProductClick} />;
@@ -133,7 +143,7 @@ const App: React.FC = () => {
         return <Chat user={user!} onBack={() => setView(ViewState.FEED)} onChatClick={handleOpenChat} />;
 
       case ViewState.NOTIFICATIONS:
-        return <Notifications onBack={() => setView(ViewState.FEED)} />;
+        return <Notifications user={user!} onBack={() => setView(ViewState.FEED)} />;
 
       case ViewState.SEARCH:
         return <SearchPage onBack={() => setView(ViewState.FEED)} onProductClick={handleProductClick} />;
@@ -167,7 +177,7 @@ const App: React.FC = () => {
       ViewState.CHAT_DETAIL, 
       ViewState.SALES, 
       ViewState.WATCHLIST, 
-      ViewState.NOTIFICATIONS,
+      ViewState.NOTIFICATIONS, 
       ViewState.SEARCH,
       ViewState.SETTINGS,
       ViewState.KEYWORD_SETTINGS,

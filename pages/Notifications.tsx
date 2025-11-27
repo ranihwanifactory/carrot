@@ -2,36 +2,48 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, BellRing, Tag, CheckCheck } from 'lucide-react';
 import { Notification } from '../types';
 import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead } from '../services/firebase';
+import { User } from 'firebase/auth';
 
 interface NotificationsProps {
+    user?: User;
     onBack: () => void;
 }
 
-const Notifications: React.FC<NotificationsProps> = ({ onBack }) => {
+const Notifications: React.FC<NotificationsProps> = ({ user, onBack }) => {
     const [activeTab, setActiveTab] = useState<'ACTIVITY' | 'KEYWORD'>('ACTIVITY');
     const [notifications, setNotifications] = useState<Notification[]>([]);
 
     useEffect(() => {
+        if (!user) return;
         const load = () => {
-            setNotifications(getNotifications());
+            setNotifications(getNotifications(user.uid));
         };
         load();
         window.addEventListener('notifications-update', load);
         return () => window.removeEventListener('notifications-update', load);
-    }, []);
+    }, [user]);
 
     const displayNotis = notifications.filter(n => n.type === activeTab);
 
     const timeAgo = (date: number) => {
         const seconds = Math.floor((new Date().getTime() - date) / 1000);
+        if (seconds < 60) return "방금 전";
         if (seconds < 3600) return Math.floor(seconds / 60) + "분 전";
         if (seconds < 86400) return Math.floor(seconds / 3600) + "시간 전";
         return Math.floor(seconds / 86400) + "일 전";
     };
 
     const handleRead = (id: string) => {
-        markNotificationAsRead(id);
+        if (!user) return;
+        markNotificationAsRead(user.uid, id);
     };
+
+    const handleMarkAllRead = () => {
+        if (!user) return;
+        markAllNotificationsAsRead(user.uid);
+    }
+
+    if (!user) return null;
 
     return (
         <div className="bg-white min-h-screen">
@@ -43,7 +55,7 @@ const Notifications: React.FC<NotificationsProps> = ({ onBack }) => {
                     <h1 className="text-lg font-bold">알림</h1>
                 </div>
                 <button 
-                    onClick={markAllNotificationsAsRead}
+                    onClick={handleMarkAllRead}
                     className="text-xs text-gray-500 flex items-center gap-1 hover:text-gray-900"
                 >
                     <CheckCheck size={14} />
@@ -91,7 +103,7 @@ const Notifications: React.FC<NotificationsProps> = ({ onBack }) => {
                         )}
                         <div className="flex-1">
                             <p className={`text-gray-900 text-[15px] leading-snug mb-1 ${!noti.isRead && 'font-medium'}`}>{noti.text}</p>
-                            {noti.subText && <p className="text-gray-500 text-xs mb-1">{noti.subText}</p>}
+                            {noti.subText && <p className="text-gray-500 text-xs mb-1 line-clamp-1">{noti.subText}</p>}
                             <span className="text-gray-400 text-xs">{timeAgo(noti.timestamp)}</span>
                         </div>
                     </div>
@@ -104,9 +116,7 @@ const Notifications: React.FC<NotificationsProps> = ({ onBack }) => {
             
             {activeTab === 'KEYWORD' && displayNotis.length === 0 && (
                  <div className="text-center pb-8">
-                     <button className="text-primary text-sm font-bold bg-orange-50 px-4 py-2 rounded-full">
-                         + 키워드 알림 설정하기
-                     </button>
+                     <p className="text-xs text-gray-400 mb-2">원하는 키워드를 등록해보세요</p>
                  </div>
             )}
         </div>

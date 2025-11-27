@@ -23,8 +23,6 @@ const LOCAL_PRODUCTS_KEY = 'carrot_local_products'; // For new products OR edits
 const LOCAL_CHATS_KEY = 'carrot_local_chats';
 const LOCAL_MESSAGES_KEY = 'carrot_local_messages';
 const LOCAL_HIDDEN_IDS_KEY = 'carrot_hidden_ids'; // For deleted products (both mock and real)
-const LOCAL_NOTIFICATIONS_KEY = 'carrot_notifications';
-const LOCAL_KEYWORDS_KEY = 'carrot_keywords';
 
 // Mock data for initial populated feel
 const MOCK_PRODUCTS: Product[] = [
@@ -55,35 +53,6 @@ const MOCK_PRODUCTS: Product[] = [
         sellerName: '미니멀리스트',
         sellerId: 'mock-user-2',
         isSold: true
-    }
-];
-
-// Mock Notifications
-const MOCK_NOTIFICATIONS: Notification[] = [
-    {
-        id: 'noti-1',
-        type: 'ACTIVITY',
-        text: '당근러님이 "아이패드 에어" 게시글을 관심목록에 추가했어요.',
-        timestamp: Date.now() - 3600000,
-        isRead: false,
-        imageUrl: 'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&q=80&w=100'
-    },
-    {
-        id: 'noti-2',
-        type: 'ACTIVITY',
-        text: '따뜻한 거래 되셨나요? 거래 후기를 남겨주세요.',
-        subText: '이사가서 의자 무료나눔해요',
-        timestamp: Date.now() - 86400000,
-        isRead: true,
-        imageUrl: 'https://images.unsplash.com/photo-1503602642458-2321114453ad?auto=format&fit=crop&q=80&w=100'
-    },
-    {
-        id: 'noti-3',
-        type: 'KEYWORD',
-        text: '"맥북" 키워드 알림',
-        subText: '새로운 상품이 등록되었습니다: 맥북 프로 14인치 팝니다.',
-        timestamp: Date.now() - 172800000,
-        isRead: true
     }
 ];
 
@@ -135,7 +104,6 @@ export const subscribeToProducts = (callback: (products: Product[]) => void) => 
         let merged = [...firebaseData];
 
         // 2. Add Mock Data (if not in firebase)
-        // Check if mock data is already in firebase (to avoid dupes if we ever synced them)
         MOCK_PRODUCTS.forEach(mock => {
              if (!merged.find(p => p.id === mock.id)) {
                  merged.push(mock);
@@ -183,9 +151,6 @@ export const createProduct = async (product: Omit<Product, 'id'>) => {
     const newProduct = { ...product, id: newId };
 
     try {
-        // Trigger Keyword Check
-        checkKeywordsAndNotify(newProduct);
-
         // Try Firebase
         const fbRef = push(productsRef);
         const fbId = fbRef.key;
@@ -205,31 +170,27 @@ export const createProduct = async (product: Omit<Product, 'id'>) => {
 };
 
 export const updateProduct = async (product: Product) => {
-    // 1. Save Local Override Immediately (Optimistic UI)
     saveLocalProduct(product);
     window.dispatchEvent(new Event('product-local-update'));
 
-    // 2. Try Firebase Update
     if (!product.id.startsWith('local-') && !product.id.startsWith('mock-')) {
         try {
             await update(ref(db, `products/${product.id}`), product);
         } catch (e) {
-            console.warn("Firebase update failed (permission?), kept local override.", e);
+            console.warn("Firebase update failed", e);
         }
     }
 };
 
 export const deleteProduct = async (productId: string) => {
-    // 1. Hide Locally Immediately (Optimistic UI)
     hideProductLocally(productId);
     window.dispatchEvent(new Event('product-local-update'));
 
-    // 2. Try Firebase Delete
     if (!productId.startsWith('local-') && !productId.startsWith('mock-')) {
         try {
             await remove(ref(db, `products/${productId}`));
         } catch (e) {
-             console.warn("Firebase delete failed (permission?), kept local hide.", e);
+             console.warn("Firebase delete failed", e);
         }
     }
 };
@@ -246,7 +207,6 @@ export const toggleLike = (productId: string, currentLikes: number) => {
         localStorage.setItem(likesKey, JSON.stringify(myLikes));
     }
 
-    // Attempt Firebase update but don't worry if it fails
     if (!productId.startsWith('local-') && !productId.startsWith('mock-')) {
         update(ref(db, `products/${productId}`), { likes: currentLikes + 1 }).catch(() => {});
     }
@@ -257,80 +217,111 @@ export const getMyLikedProductIds = (): string[] => {
     return JSON.parse(localStorage.getItem('my_likes') || '[]');
 };
 
-// --- KEYWORD SERVICES ---
+// --- KEYWORD & NOTIFICATION SERVICES (User Specific) ---
 
-export const getKeywords = (): string[] => {
-    return JSON.parse(localStorage.getItem(LOCAL_KEYWORDS_KEY) || '[]');
+const getUserKeywordsKey = (userId: string) => `carrot_keywords_${userId}`;
+const getUserNotisKey = (userId: string) => `carrot_notifications_${userId}`;
+const getUserNotifiedProductsKey = (userId: string) => `carrot_notified_pids_${userId}`;
+
+export const getKeywords = (userId: string): string[] => {
+    return JSON.parse(localStorage.getItem(getUserKeywordsKey(userId)) || '[]');
 };
 
-export const addKeyword = (keyword: string) => {
-    const keywords = getKeywords();
+export const addKeyword = (userId: string, keyword: string) => {
+    const keywords = getKeywords(userId);
     if (!keywords.includes(keyword)) {
         keywords.push(keyword);
-        localStorage.setItem(LOCAL_KEYWORDS_KEY, JSON.stringify(keywords));
+        localStorage.setItem(getUserKeywordsKey(userId), JSON.stringify(keywords));
     }
 };
 
-export const removeKeyword = (keyword: string) => {
-    const keywords = getKeywords();
+export const removeKeyword = (userId: string, keyword: string) => {
+    const keywords = getKeywords(userId);
     const newKeywords = keywords.filter(k => k !== keyword);
-    localStorage.setItem(LOCAL_KEYWORDS_KEY, JSON.stringify(newKeywords));
+    localStorage.setItem(getUserKeywordsKey(userId), JSON.stringify(newKeywords));
 };
 
-const checkKeywordsAndNotify = (product: Product | Omit<Product, 'id'>) => {
-    const keywords = getKeywords();
-    const matched = keywords.find(k => product.title.includes(k) || product.description.includes(k));
-    
-    if (matched) {
-        const newNotification: Notification = {
-            id: `noti-key-${Date.now()}`,
-            type: 'KEYWORD',
-            text: `"${matched}" 키워드 알림`,
-            subText: `새로운 상품이 등록되었습니다: ${product.title}`,
-            timestamp: Date.now(),
-            isRead: false
-        };
-        
-        const currentNotis = getNotifications();
-        currentNotis.unshift(newNotification); // Add to beginning
-        localStorage.setItem(LOCAL_NOTIFICATIONS_KEY, JSON.stringify(currentNotis));
-        window.dispatchEvent(new Event('notifications-update'));
-    }
+export const getNotifications = (userId: string): Notification[] => {
+    return JSON.parse(localStorage.getItem(getUserNotisKey(userId)) || '[]');
 };
 
-// --- NOTIFICATION SERVICES ---
+export const markNotificationAsRead = (userId: string, notiId: string) => {
+    const notis = getNotifications(userId);
+    const updated = notis.map(n => n.id === notiId ? { ...n, isRead: true } : n);
+    localStorage.setItem(getUserNotisKey(userId), JSON.stringify(updated));
+    window.dispatchEvent(new Event('notifications-update'));
+};
 
-export const getNotifications = (): Notification[] => {
-    const local = JSON.parse(localStorage.getItem(LOCAL_NOTIFICATIONS_KEY) || '[]');
-    // Merge with mock notifications that aren't in local (by ID)
-    const merged = [...local];
-    MOCK_NOTIFICATIONS.forEach(mock => {
-        if (!merged.find(n => n.id === mock.id)) {
-            merged.push(mock);
+export const markAllNotificationsAsRead = (userId: string) => {
+    const notis = getNotifications(userId);
+    const updated = notis.map(n => ({ ...n, isRead: true }));
+    localStorage.setItem(getUserNotisKey(userId), JSON.stringify(updated));
+    window.dispatchEvent(new Event('notifications-update'));
+};
+
+const createLocalNotification = (userId: string, notification: Omit<Notification, 'id' | 'timestamp' | 'isRead'>) => {
+    const notis = getNotifications(userId);
+    const newNoti: Notification = {
+        id: `noti-${Date.now()}-${Math.random()}`,
+        timestamp: Date.now(),
+        isRead: false,
+        ...notification
+    };
+    notis.unshift(newNoti);
+    localStorage.setItem(getUserNotisKey(userId), JSON.stringify(notis));
+    window.dispatchEvent(new Event('notifications-update'));
+};
+
+// Monitor for keywords - Call this when App starts or User logs in
+export const startKeywordMonitoring = (userId: string) => {
+    // We reuse subscribeToProducts to get the stream of all products (firebase + local)
+    // In a real app, this would be a server-side trigger (Cloud Functions)
+    return subscribeToProducts((products) => {
+        const keywords = getKeywords(userId);
+        if (keywords.length === 0) return;
+
+        const notifiedPids: string[] = JSON.parse(localStorage.getItem(getUserNotifiedProductsKey(userId)) || '[]');
+        let hasNewNotification = false;
+
+        products.forEach(p => {
+            // 1. Skip if I wrote it
+            if (p.sellerId === userId) return;
+            
+            // 2. Skip if already notified
+            if (notifiedPids.includes(p.id)) return;
+
+            // 3. Skip if sold (optional, but usually we want to know about selling items)
+            // if (p.isSold) return;
+
+            // 4. Check for keyword match
+            const matchedKeyword = keywords.find(k => 
+                p.title.includes(k) || p.description.includes(k)
+            );
+
+            if (matchedKeyword) {
+                // Create Notification
+                createLocalNotification(userId, {
+                    type: 'KEYWORD',
+                    text: `"${matchedKeyword}" 키워드 알림`,
+                    subText: `새로운 상품이 등록되었습니다: ${p.title}`,
+                    imageUrl: p.imageUrl
+                });
+
+                notifiedPids.push(p.id);
+                hasNewNotification = true;
+            }
+        });
+
+        if (hasNewNotification) {
+            localStorage.setItem(getUserNotifiedProductsKey(userId), JSON.stringify(notifiedPids));
         }
     });
-    return merged.sort((a: Notification, b: Notification) => b.timestamp - a.timestamp);
 };
-
-export const markNotificationAsRead = (notiId: string) => {
-    const notis = getNotifications();
-    const updated = notis.map(n => n.id === notiId ? { ...n, isRead: true } : n);
-    localStorage.setItem(LOCAL_NOTIFICATIONS_KEY, JSON.stringify(updated));
-    window.dispatchEvent(new Event('notifications-update'));
-};
-
-export const markAllNotificationsAsRead = () => {
-    const notis = getNotifications();
-    const updated = notis.map(n => ({ ...n, isRead: true }));
-    localStorage.setItem(LOCAL_NOTIFICATIONS_KEY, JSON.stringify(updated));
-    window.dispatchEvent(new Event('notifications-update'));
-}
 
 // --- USER PROFILE SERVICES ---
 export const updateUserProfile = async (user: User, displayName: string, photoURL?: string) => {
     try {
         await updateProfile(user, { displayName, photoURL });
-        // Force refresh user state in auth listener if needed, usually automatic
         return true;
     } catch (e) {
         console.error("Profile update failed", e);
@@ -341,7 +332,6 @@ export const updateUserProfile = async (user: User, displayName: string, photoUR
 
 // --- CHAT SERVICES ---
 
-// Sanitize string for Firebase keys (no '.', '#', '$', '[', ']')
 const sanitizeKey = (key: string) => key.replace(/[.#$\[\]]/g, '_');
 
 export const createOrGetChat = async (user: User, product: Product): Promise<string> => {
