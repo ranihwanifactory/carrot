@@ -33,6 +33,26 @@ const Detail: React.FC<DetailProps> = ({ product, currentUser, onBack, onEdit, o
       }
   };
 
+  const handleShare = async () => {
+      const shareData = {
+          title: `[당근] ${product.title}`,
+          text: `${product.title} - ${product.price === 0 ? '무료나눔' : product.price.toLocaleString() + '원'}`,
+          url: window.location.href 
+      };
+
+      try {
+          if (typeof navigator.share !== 'undefined' && navigator.canShare && navigator.canShare(shareData)) {
+              await navigator.share(shareData);
+          } else {
+              // Fallback for browsers/platforms that don't support Web Share API
+              await navigator.clipboard.writeText(`${shareData.title}\n${shareData.text}`);
+              alert("게시글 정보가 복사되었습니다. 친구에게 공유해보세요!");
+          }
+      } catch (e) {
+          console.log("Share failed", e);
+      }
+  };
+
   const handleStartChat = async () => {
       if (isOwner) {
           alert("본인의 상품입니다. 채팅 목록에서 대화를 확인하세요.");
@@ -63,7 +83,10 @@ const Detail: React.FC<DetailProps> = ({ product, currentUser, onBack, onEdit, o
             <ArrowLeft size={20} />
         </button>
         <div className="flex gap-3 relative">
-            <button className="w-10 h-10 bg-white/80 backdrop-blur rounded-full flex items-center justify-center shadow-sm text-gray-700">
+            <button 
+                onClick={handleShare}
+                className="w-10 h-10 bg-white/80 backdrop-blur rounded-full flex items-center justify-center shadow-sm text-gray-700 active:scale-95 transition-transform"
+            >
                 <Share2 size={20} />
             </button>
             {isOwner && (
